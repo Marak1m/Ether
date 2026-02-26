@@ -52,7 +52,7 @@ Copy values from your `.env.local` file.
 
 ### Step 6: Test
 
-1. Join WhatsApp sandbox (send join code to +1 913 799 0421)
+1. Join WhatsApp sandbox (send "join habit-needed" to +1 415 523 8886)
 2. Send a photo
 3. Follow the prompts
 4. Check your dashboard!

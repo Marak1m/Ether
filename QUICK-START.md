@@ -34,7 +34,7 @@ NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
 TWILIO_ACCOUNT_SID=your_twilio_sid
 TWILIO_AUTH_TOKEN=your_twilio_auth_token
-TWILIO_WHATSAPP_NUMBER=+19137990421
+TWILIO_WHATSAPP_NUMBER=+14155238886
 ```
 
 ### 3. Set Up Database
@@ -86,7 +86,7 @@ git push -u origin main
 
 ### 4. Test WhatsApp
 
-1. Add contact: +1 913 799 0421
+1. Add contact: +1 415 523 8886
 2. Send join code from Twilio
 3. Send a photo
 4. Done! 🎉
@@ -141,7 +141,7 @@ npx ts-node test-gemini.ts
 1. Go to https://console.twilio.com
 2. Get Account SID and Auth Token
 3. Go to WhatsApp Sandbox
-4. Get WhatsApp number: +1 913 799 0421
+4. Get WhatsApp number: +1 415 523 8886
 
 ---
 

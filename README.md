@@ -102,7 +102,7 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
 # WhatsApp
 TWILIO_ACCOUNT_SID=your_twilio_sid
 TWILIO_AUTH_TOKEN=your_twilio_auth_token
-TWILIO_WHATSAPP_NUMBER=+19137990421
+TWILIO_WHATSAPP_NUMBER=+14155238886
 ```
 
 ### 3. Database Setup
@@ -150,7 +150,7 @@ Open http://localhost:3000
    - Save
 
 4. **Test WhatsApp**
-   - Add contact: +1 913 799 0421
+   - Add contact: +1 415 523 8886
    - Send join code from Twilio
    - Send a photo to test!
 

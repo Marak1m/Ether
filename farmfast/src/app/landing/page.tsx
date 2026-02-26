@@ -77,7 +77,7 @@ export default function LandingPage() {
                   Start as Buyer
                   <ArrowRight className="w-5 h-5" />
                 </Link>
-                <a href="https://wa.me/19137990421" target="_blank" rel="noopener noreferrer"
+                <a href="https://wa.me/14155238886?text=join%20habit-needed" target="_blank" rel="noopener noreferrer"
                   className="bg-white hover:bg-gray-50 text-gray-900 font-semibold px-8 py-4 rounded-xl flex items-center gap-2 border border-gray-200 transition-all hover:scale-105 shadow-sm">
                   <span className="text-xl">💬</span>
                   I&apos;m a Farmer
