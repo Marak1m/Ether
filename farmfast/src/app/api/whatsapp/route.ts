@@ -42,15 +42,23 @@ export async function POST(req: NextRequest) {
       .single()
 
     if (!session) {
+      const initialState = farmer ? 'idle' : 'awaiting_name'
       const { data: newSession } = await supabase
         .from('chat_sessions')
         .insert({ 
           farmer_phone: from, 
-          conversation_state: farmer ? 'idle' : 'awaiting_name' 
+          conversation_state: initialState
         })
         .select()
         .single()
       session = newSession
+      
+      // Send welcome message for new unregistered farmers
+      if (!farmer) {
+        const welcomeMsg = '🌾 *FarmFast में आपका स्वागत है!*\n\nपहले अपना नाम बताएं:'
+        await sendWhatsAppMessage(from, welcomeMsg)
+        return NextResponse.json({ success: true })
+      }
     }
 
     // If farmer not registered, start registration flow
