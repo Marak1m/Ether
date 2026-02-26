@@ -63,12 +63,22 @@ export default function AdminPage() {
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="max-w-2xl mx-auto px-4">
         <div className="bg-white rounded-lg shadow-md p-6">
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">
-            🌾 FarmFast Admin - Add Listing
-          </h1>
-          <p className="text-sm text-gray-600 mb-6">
-            Quick way to add test listings without WhatsApp
-          </p>
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900 mb-2">
+                🌾 FarmFast Admin - Add Listing
+              </h1>
+              <p className="text-sm text-gray-600">
+                Quick way to add test listings without WhatsApp
+              </p>
+            </div>
+            <a
+              href="/admin/console"
+              className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors text-sm font-medium"
+            >
+              🔐 Admin Console
+            </a>
+          </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
