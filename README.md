@@ -1,5 +1,5 @@
 # FarmFast - AI-Powered Agricultural Marketplace
-Projeft for AI for Bharat 
+Projeft for AI for Bharat to 
 Connect farmers with buyers through WhatsApp and AI-powered quality grading.
 
 ## 🌾 What is FarmFast?
