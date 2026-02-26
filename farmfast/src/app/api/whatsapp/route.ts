@@ -15,6 +15,7 @@ export async function POST(req: NextRequest) {
     const mediaUrl = numMedia > 0 ? formData.get('MediaUrl0') as string : null
     
     console.log(`WhatsApp message from ${from}: "${body}", media: ${!!mediaUrl}`)
+    console.log(`Session state check starting...`)
 
     // Ignore Twilio sandbox join/leave commands and confirmations
     const bodyLower = body.toLowerCase()
@@ -40,6 +41,8 @@ export async function POST(req: NextRequest) {
       .select('*')
       .eq('farmer_phone', from)
       .single()
+
+    console.log(`Session found: ${session ? 'YES' : 'NO'}, State: ${session?.conversation_state}`)
 
     if (!session) {
       const initialState = farmer ? 'idle' : 'awaiting_name'
@@ -108,6 +111,7 @@ export async function POST(req: NextRequest) {
 
     // Handle full address input (registration step 2)
     if (session?.conversation_state === 'awaiting_full_address') {
+      console.log(`Handling full address input: "${body}"`)
       const fullAddress = body.trim()
       
       if (!fullAddress || fullAddress.length < 10) {
@@ -116,7 +120,7 @@ export async function POST(req: NextRequest) {
       }
 
       // Save address and ask for pincode
-      await supabase
+      const { data: updatedSession } = await supabase
         .from('chat_sessions')
         .update({
           temp_full_address: fullAddress,
@@ -124,6 +128,11 @@ export async function POST(req: NextRequest) {
           last_message_at: new Date().toISOString()
         })
         .eq('farmer_phone', from)
+        .select()
+        .single()
+      
+      session = updatedSession // Update local session variable
+      console.log(`Updated session state to: ${session?.conversation_state}`)
 
       const pincodeMsg = `✅ पता सहेजा गया!\n\n📮 अब अपना पिनकोड भेजें (6 अंक):\n\nउदाहरण: 411001`
       await sendWhatsAppMessage(from, pincodeMsg)
@@ -133,6 +142,7 @@ export async function POST(req: NextRequest) {
 
     // Handle initial location input (registration step 3 - pincode)
     if (session?.conversation_state === 'awaiting_initial_location') {
+      console.log(`Handling pincode input: "${body}"`)
       const pincode = body.replace(/\s/g, '')
       
       if (!/^\d{6}$/.test(pincode)) {
