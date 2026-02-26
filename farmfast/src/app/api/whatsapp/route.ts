@@ -44,7 +44,10 @@ export async function POST(req: NextRequest) {
     }
 
     // If farmer not registered, start registration flow
-    if (!farmer && session?.conversation_state !== 'awaiting_name' && session?.conversation_state !== 'awaiting_initial_location') {
+    if (!farmer && 
+        session?.conversation_state !== 'awaiting_name' && 
+        session?.conversation_state !== 'awaiting_full_address' &&
+        session?.conversation_state !== 'awaiting_initial_location') {
       await supabase
         .from('chat_sessions')
         .update({ conversation_state: 'awaiting_name' })
@@ -53,14 +56,8 @@ export async function POST(req: NextRequest) {
       const welcomeMsg = '🌾 *FarmFast में आपका स्वागत है!*\n\nपहले अपना नाम बताएं:'
       await sendWhatsAppMessage(from, welcomeMsg)
       
-      // Send voice message
-      try {
-        const audioBase64 = await textToSpeech('फार्मफास्ट में आपका स्वागत है। पहले अपना नाम बताएं।')
-        const audioUrl = `data:audio/mp3;base64,${audioBase64}`
-        await sendWhatsAppMessage(from, '🔊 आवाज़ संदेश:', audioUrl)
-      } catch (error) {
-        console.error('Voice message error:', error)
-      }
+      // Voice messages disabled - Twilio WhatsApp doesn't support data URLs
+      // TODO: Upload audio to Supabase Storage and use public URL
 
       return NextResponse.json({ success: true })
     }
@@ -87,15 +84,7 @@ export async function POST(req: NextRequest) {
       const addressMsg = `धन्यवाद ${name} जी! 🙏\n\n📍 अब अपना पूरा पता बताएं:\n\nउदाहरण: गाँव/शहर, तहसील, जिला, राज्य`
       await sendWhatsAppMessage(from, addressMsg)
 
-      // Send voice message
-      try {
-        const audioBase64 = await textToSpeech(`धन्यवाद ${name} जी। अब अपना पूरा पता बताएं।`)
-        const audioUrl = `data:audio/mp3;base64,${audioBase64}`
-        await sendWhatsAppMessage(from, '🔊 आवाज़ संदेश:', audioUrl)
-      } catch (error) {
-        console.error('Voice message error:', error)
-      }
-
+      // Voice messages disabled
       return NextResponse.json({ success: true })
     }
 
@@ -163,14 +152,7 @@ export async function POST(req: NextRequest) {
         const successMsg = `✅ रजिस्ट्रेशन पूरा हुआ!\n\n👤 नाम: ${session.farmer_name}\n📍 पता: ${session.temp_full_address}\n📮 पिनकोड: ${pincode}\n\n📸 अब अपनी फसल की फोटो भेजें और बेचना शुरू करें! 🚀\n\n💡 *मेनू* लिखें प्रोफाइल अपडेट करने के लिए`
         await sendWhatsAppMessage(from, successMsg)
 
-        // Send voice message
-        try {
-          const audioBase64 = await textToSpeech('रजिस्ट्रेशन पूरा हुआ। अब अपनी फसल की फोटो भेजें और बेचना शुरू करें।')
-          const audioUrl = `data:audio/mp3;base64,${audioBase64}`
-          await sendWhatsAppMessage(from, '🔊 आवाज़ संदेश:', audioUrl)
-        } catch (error) {
-          console.error('Voice message error:', error)
-        }
+        // Voice messages disabled
 
       } catch (error) {
         console.error('Geocoding error:', error)
@@ -185,14 +167,7 @@ export async function POST(req: NextRequest) {
       const processingMsg = 'आपकी फसल की जांच हो रही है... कृपया 10 सेकंड प्रतीक्षा करें। ⏳'
       await sendWhatsAppMessage(from, processingMsg)
 
-      // Send voice message
-      try {
-        const audioBase64 = await textToSpeech('आपकी फसल की जांच हो रही है। कृपया दस सेकंड प्रतीक्षा करें।')
-        const audioUrl = `data:audio/mp3;base64,${audioBase64}`
-        await sendWhatsAppMessage(from, '🔊 आवाज़ संदेश:', audioUrl)
-      } catch (error) {
-        console.error('Voice message error:', error)
-      }
+      // Voice messages disabled
 
       // Download image from Twilio
       const imageResponse = await axios.get(mediaUrl, {
@@ -251,15 +226,7 @@ export async function POST(req: NextRequest) {
 
       await sendWhatsAppMessage(from, message)
 
-      // Send voice message with grade result
-      try {
-        const voiceText = `ग्रेड ${gradeResult.grade}। ${gradeResult.hindi_summary}। उचित भाव ${gradeResult.price_range_min} से ${gradeResult.price_range_max} रुपये प्रति किलो।`
-        const audioBase64 = await textToSpeech(voiceText)
-        const audioUrl = `data:audio/mp3;base64,${audioBase64}`
-        await sendWhatsAppMessage(from, '🔊 आवाज़ संदेश:', audioUrl)
-      } catch (error) {
-        console.error('Voice message error:', error)
-      }
+      // Voice messages disabled
       
       return NextResponse.json({ success: true })
     }
