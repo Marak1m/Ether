@@ -74,6 +74,30 @@ export default function AdminConsole() {
     if (!confirm('Are you sure you want to delete this record?')) return
     
     try {
+      // Special handling for farmers - delete related listings first
+      if (table === 'farmers') {
+        // Get farmer's phone to find related listings
+        const { data: farmer } = await supabase
+          .from('farmers')
+          .select('phone')
+          .eq('id', id)
+          .single()
+        
+        if (farmer) {
+          // Delete related listings
+          await supabase
+            .from('listings')
+            .delete()
+            .eq('farmer_phone', farmer.phone)
+          
+          // Delete related chat sessions
+          await supabase
+            .from('chat_sessions')
+            .delete()
+            .eq('farmer_phone', farmer.phone)
+        }
+      }
+      
       const { error } = await supabase.from(table).delete().eq('id', id)
       if (error) throw error
       
