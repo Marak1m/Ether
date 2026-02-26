@@ -3,7 +3,6 @@ import { supabase } from '@/lib/supabase'
 import { gradeProduceImage } from '@/lib/gemini'
 import { sendWhatsAppMessage, formatPhoneNumber } from '@/lib/twilio'
 import { getCoordinatesFromPincode } from '@/lib/geocoding'
-import { textToSpeech } from '@/lib/tts'
 import axios from 'axios'
 
 export async function POST(req: NextRequest) {
@@ -16,6 +15,17 @@ export async function POST(req: NextRequest) {
     const mediaUrl = numMedia > 0 ? formData.get('MediaUrl0') as string : null
     
     console.log(`WhatsApp message from ${from}: "${body}", media: ${!!mediaUrl}`)
+
+    // Ignore Twilio sandbox join/leave commands and confirmations
+    const bodyLower = body.toLowerCase()
+    if (bodyLower.includes('join') || 
+        bodyLower.includes('stop') || 
+        bodyLower.includes('sandbox') ||
+        bodyLower.includes('you are all set') ||
+        body.startsWith('Twilio')) {
+      console.log('Ignoring Twilio system message')
+      return NextResponse.json({ success: true })
+    }
 
     // Check if farmer is registered
     const { data: farmer } = await supabase
