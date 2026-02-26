@@ -20,7 +20,7 @@ export interface QualityGradeResult {
 export async function gradeProduceImage(
   imageBase64: string
 ): Promise<QualityGradeResult> {
-  const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" })
+  const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" })
 
   const prompt = `You are an expert agricultural quality inspector in India analyzing produce for market grading.
 
