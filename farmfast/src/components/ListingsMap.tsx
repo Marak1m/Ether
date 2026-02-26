@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { Listing } from '@/lib/supabase'
+import 'leaflet/dist/leaflet.css'
 
 // Dynamic import to avoid SSR issues
 let L: any = null
@@ -24,7 +25,6 @@ export function ListingsMap({ listings, buyerLocation, onListingClick }: Listing
       
       if (!L) {
         L = (await import('leaflet')).default
-        await import('leaflet/dist/leaflet.css')
         
         // Fix for default marker icons
         delete (L.Icon.Default.prototype as any)._getIconUrl
@@ -58,7 +58,7 @@ export function ListingsMap({ listings, buyerLocation, onListingClick }: Listing
     }
 
     // Clear existing markers
-    mapRef.current.eachLayer((layer) => {
+    mapRef.current.eachLayer((layer: any) => {
       if (layer instanceof L.Marker) {
         mapRef.current?.removeLayer(layer)
       }
