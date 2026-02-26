@@ -8,15 +8,22 @@ const client = twilio(
 export async function sendWhatsAppMessage(
   to: string,
   body: string,
-  mediaUrl?: string
+  mediaUrl?: string,
+  includeVoice: boolean = false
 ) {
   try {
-    const message = await client.messages.create({
+    const messageData: any = {
       from: process.env.TWILIO_WHATSAPP_NUMBER!,
       to: `whatsapp:${to}`,
-      body,
-      ...(mediaUrl && { mediaUrl: [mediaUrl] })
-    })
+      body
+    }
+
+    // Add media URL if provided (image or audio)
+    if (mediaUrl) {
+      messageData.mediaUrl = [mediaUrl]
+    }
+
+    const message = await client.messages.create(messageData)
     return message
   } catch (error) {
     console.error('Twilio send error:', error)

@@ -8,14 +8,72 @@ Farmers interact with FarmFast entirely through WhatsApp. No app download needed
 
 ## Complete Flow
 
+### Step 0: First-Time Registration (New Farmers Only) 👤
+
+**New Farmer:** Sends any message to **+1 415 523 8886** (sandbox)
+
+**System:**
+- Checks if farmer is registered
+- If not registered, starts registration flow
+
+**Farmer Receives:**
+```
+🌾 FarmFast में आपका स्वागत है!
+
+पहले अपना नाम बताएं:
+```
+**Plus:** 🔊 Voice message in Hindi
+
+---
+
+### Step 0.1: Provide Name
+
+**Farmer:** Types their name (e.g., `राज कुमार`)
+
+**System:**
+- Saves name in session
+- Asks for location
+
+**Farmer Receives:**
+```
+धन्यवाद राज कुमार जी! 🙏
+
+अब अपना पिनकोड भेजें (जैसे: 411001):
+```
+**Plus:** 🔊 Voice message in Hindi
+
+---
+
+### Step 0.2: Provide Location
+
+**Farmer:** Types pincode (e.g., `411001`)
+
+**System:**
+- Validates pincode (6 digits)
+- Geocodes to coordinates
+- Creates farmer profile in database
+- Marks registration complete
+
+**Farmer Receives:**
+```
+✅ रजिस्ट्रेशन पूरा हुआ!
+
+📍 स्थान: Pune, Maharashtra, India
+
+📸 अब अपनी फसल की फोटो भेजें और बेचना शुरू करें! 🚀
+```
+**Plus:** 🔊 Voice message in Hindi
+
+---
+
 ### Step 1: Send Photo 📸
 
-**Farmer:** Sends photo of produce to **+1 913 799 0421**
+**Farmer:** Sends photo of produce
 
 **System:**
 - Downloads image
 - Sends to Gemini AI for grading
-- Creates listing (without location yet)
+- Creates listing with farmer's saved location
 
 **Farmer Receives:**
 ```
@@ -26,30 +84,15 @@ Farmers interact with FarmFast entirely through WhatsApp. No app download needed
 उचित भाव: ₹15-20/किलो
 ताजगी: 5 दिन
 
-📍 अब अपना पिनकोड भेजें (जैसे: 411001)
-```
-
----
-
-### Step 2: Send Pincode 📍
-
-**Farmer:** Types `411001`
-
-**System:**
-- Validates pincode (6 digits)
-- Geocodes to coordinates
-- Updates listing with location
-
-**Farmer Receives:**
-```
-✅ स्थान सहेजा गया: Pune, Maharashtra, India
-
 📦 अब कितने किलो बेचना है? कृपया संख्या भेजें (जैसे: 500)
 ```
+**Plus:** 🔊 Voice message with grade details in Hindi
+
+**Note:** For registered farmers, location is already saved, so we skip directly to quantity.
 
 ---
 
-### Step 3: Send Quantity 📦
+### Step 2: Send Quantity 📦
 
 **Farmer:** Types `500`
 
@@ -68,7 +111,7 @@ Farmers interact with FarmFast entirely through WhatsApp. No app download needed
 
 ---
 
-### Step 4: Receive Offers 💰
+### Step 3: Receive Offers 💰
 
 **When buyer submits offer:**
 
@@ -86,7 +129,7 @@ Farmers interact with FarmFast entirely through WhatsApp. No app download needed
 
 ---
 
-### Step 5: Accept Offer ✅
+### Step 4: Accept Offer ✅
 
 **Farmer:** Types `पहला वाला ठीक है` (or `1`, `first`)
 
@@ -101,7 +144,7 @@ Farmers interact with FarmFast entirely through WhatsApp. No app download needed
 
 ---
 
-### Step 6: Confirm Delivery 🤝
+### Step 5: Confirm Delivery 🤝
 
 **Farmer:** Types `माल दे दिया` (after delivery)
 
@@ -128,7 +171,7 @@ Farmers interact with FarmFast entirely through WhatsApp. No app download needed
 
 **Farmer:** Types `help` or `मदद`
 
-**Response:** Shows step-by-step instructions
+**Response:** Shows step-by-step instructions (different for registered vs new farmers)
 
 ---
 
@@ -136,16 +179,35 @@ Farmers interact with FarmFast entirely through WhatsApp. No app download needed
 
 The system tracks conversation state:
 
-1. **idle** - Ready for new listing
-2. **awaiting_location** - Waiting for pincode
-3. **awaiting_quantity** - Waiting for quantity
-4. **listing_active** - Listing created, waiting for offers
-5. **reviewing_offers** - Offers received
-6. **awaiting_handover_confirmation** - Waiting for delivery confirmation
+1. **awaiting_name** - New farmer, waiting for name (registration)
+2. **awaiting_initial_location** - New farmer, waiting for pincode (registration)
+3. **idle** - Ready for new listing (registered farmer)
+4. **awaiting_location** - Waiting for pincode (unregistered farmer with image)
+5. **awaiting_quantity** - Waiting for quantity
+6. **listing_active** - Listing created, waiting for offers
+7. **reviewing_offers** - Offers received
+8. **awaiting_handover_confirmation** - Waiting for delivery confirmation
+
+---
+
+## Voice Messages 🔊
+
+Every important message includes a voice response in Hindi:
+- Welcome message
+- Registration confirmation
+- Grade results
+- Processing updates
+
+This helps farmers who may have difficulty reading.
 
 ---
 
 ## Error Handling
+
+### Invalid Name
+```
+❌ कृपया अपना पूरा नाम बताएं।
+```
 
 ### Invalid Pincode
 ```
@@ -169,18 +231,24 @@ The system tracks conversation state:
 ### Join Sandbox (One Time)
 
 1. Open WhatsApp
-2. Add contact: **+1 913 799 0421**
-3. Send join code from Twilio console
+2. Add contact: **+1 415 523 8886**
+3. Send: `join habit-needed`
 4. Wait for confirmation
 
-### Test Flow
+### Test Flow (New Farmer)
 
-1. Send photo (use test-tomato.jpg)
-2. Send pincode: `411001`
-3. Send quantity: `500`
-4. Check dashboard - listing should appear!
-5. Submit offer from dashboard
-6. Check WhatsApp - offer notification!
+1. Send any message (e.g., "hello")
+2. Send name: `Test Farmer`
+3. Send pincode: `411001`
+4. Send photo (use test-tomato.jpg)
+5. Send quantity: `500`
+6. Check dashboard - listing should appear!
+
+### Test Flow (Registered Farmer)
+
+1. Send photo directly
+2. Send quantity: `500`
+3. Done! (location already saved)
 
 ---
 
@@ -193,13 +261,17 @@ Twilio Webhook
     ↓
 /api/whatsapp
     ↓
+Check farmer registration
+    ↓
 Process based on state
     ↓
 Update database
     ↓
+Generate voice message (optional)
+    ↓
 Send response via Twilio
     ↓
-Farmer receives message
+Farmer receives text + voice
 ```
 
 ---
@@ -208,7 +280,11 @@ Farmer receives message
 
 ✅ No app required
 ✅ Hindi interface
-✅ Simple 3-step process
+✅ Voice messages for accessibility
+✅ One-time registration
+✅ Farmer profiles saved
+✅ Location pre-filled for returning farmers
+✅ Simple 2-step process (after registration)
 ✅ Real-time notifications
 ✅ State management
 ✅ Error handling
