@@ -74,22 +74,22 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: true })
       }
 
-      // Save name in session and ask for location
+      // Save name in session and ask for full address
       await supabase
         .from('chat_sessions')
         .update({
           farmer_name: name,
-          conversation_state: 'awaiting_initial_location',
+          conversation_state: 'awaiting_full_address',
           last_message_at: new Date().toISOString()
         })
         .eq('farmer_phone', from)
 
-      const locationMsg = `धन्यवाद ${name} जी! 🙏\n\nअब अपना पिनकोड भेजें (जैसे: 411001):`
-      await sendWhatsAppMessage(from, locationMsg)
+      const addressMsg = `धन्यवाद ${name} जी! 🙏\n\n📍 अब अपना पूरा पता बताएं:\n\nउदाहरण: गाँव/शहर, तहसील, जिला, राज्य`
+      await sendWhatsAppMessage(from, addressMsg)
 
       // Send voice message
       try {
-        const audioBase64 = await textToSpeech(`धन्यवाद ${name} जी। अब अपना पिनकोड भेजें।`)
+        const audioBase64 = await textToSpeech(`धन्यवाद ${name} जी। अब अपना पूरा पता बताएं।`)
         const audioUrl = `data:audio/mp3;base64,${audioBase64}`
         await sendWhatsAppMessage(from, '🔊 आवाज़ संदेश:', audioUrl)
       } catch (error) {
@@ -99,7 +99,32 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true })
     }
 
-    // Handle initial location input (registration step 2)
+    // Handle full address input (registration step 2)
+    if (session?.conversation_state === 'awaiting_full_address') {
+      const fullAddress = body.trim()
+      
+      if (!fullAddress || fullAddress.length < 10) {
+        await sendWhatsAppMessage(from, '❌ कृपया पूरा पता बताएं। उदाहरण: गाँव/शहर, तहसील, जिला, राज्य')
+        return NextResponse.json({ success: true })
+      }
+
+      // Save address and ask for pincode
+      await supabase
+        .from('chat_sessions')
+        .update({
+          temp_full_address: fullAddress,
+          conversation_state: 'awaiting_initial_location',
+          last_message_at: new Date().toISOString()
+        })
+        .eq('farmer_phone', from)
+
+      const pincodeMsg = `✅ पता सहेजा गया!\n\n📮 अब अपना पिनकोड भेजें (6 अंक):\n\nउदाहरण: 411001`
+      await sendWhatsAppMessage(from, pincodeMsg)
+
+      return NextResponse.json({ success: true })
+    }
+
+    // Handle initial location input (registration step 3 - pincode)
     if (session?.conversation_state === 'awaiting_initial_location') {
       const pincode = body.replace(/\s/g, '')
       
@@ -111,12 +136,13 @@ export async function POST(req: NextRequest) {
       try {
         const coords = await getCoordinatesFromPincode(pincode)
         
-        // Create farmer profile
+        // Create farmer profile with full address
         await supabase
           .from('farmers')
           .insert({
             phone: from,
             name: session.farmer_name,
+            full_address: session.temp_full_address,
             location: coords.display_name || 'India',
             pincode: pincode,
             latitude: coords.lat,
@@ -129,11 +155,12 @@ export async function POST(req: NextRequest) {
           .update({
             conversation_state: 'idle',
             farmer_location: coords.display_name,
+            temp_full_address: null,
             last_message_at: new Date().toISOString()
           })
           .eq('farmer_phone', from)
 
-        const successMsg = `✅ रजिस्ट्रेशन पूरा हुआ!\n\n📍 स्थान: ${coords.display_name}\n\n📸 अब अपनी फसल की फोटो भेजें और बेचना शुरू करें! 🚀`
+        const successMsg = `✅ रजिस्ट्रेशन पूरा हुआ!\n\n👤 नाम: ${session.farmer_name}\n📍 पता: ${session.temp_full_address}\n📮 पिनकोड: ${pincode}\n\n📸 अब अपनी फसल की फोटो भेजें और बेचना शुरू करें! 🚀\n\n💡 *मेनू* लिखें प्रोफाइल अपडेट करने के लिए`
         await sendWhatsAppMessage(from, successMsg)
 
         // Send voice message
@@ -190,6 +217,7 @@ export async function POST(req: NextRequest) {
           quality_grade: gradeResult.grade,
           quantity_kg: 0, // Will ask next
           location: farmer?.location || 'India',
+          full_address: farmer?.full_address,
           pincode: farmer?.pincode,
           latitude: farmer?.latitude,
           longitude: farmer?.longitude,
@@ -396,11 +424,130 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Handle menu command
+    if (body.toLowerCase().includes('menu') || body.toLowerCase().includes('मेनू')) {
+      if (!farmer) {
+        await sendWhatsAppMessage(from, '❌ पहले रजिस्ट्रेशन पूरा करें।')
+        return NextResponse.json({ success: true })
+      }
+
+      const menuMsg = `📋 *FarmFast मेनू*\n\n*प्रोफाइल देखें:*\n"प्रोफाइल" या "profile" लिखें\n\n*प्रोफाइल अपडेट करें:*\n• नाम बदलें: "नाम बदलो [नया नाम]"\n• पता बदलें: "पता बदलो [नया पता]"\n• पिनकोड बदलें: "पिनकोड बदलो [नया पिनकोड]"\n\n*उदाहरण:*\nनाम बदलो राज कुमार\nपता बदलो गाँव खेड़ा, पुणे, महाराष्ट्र\nपिनकोड बदलो 411001\n\n*फसल बेचने के लिए:*\nफोटो भेजें 📸`
+
+      await sendWhatsAppMessage(from, menuMsg)
+      return NextResponse.json({ success: true })
+    }
+
+    // Handle profile view
+    if (body.toLowerCase().includes('profile') || body.toLowerCase().includes('प्रोफाइल')) {
+      if (!farmer) {
+        await sendWhatsAppMessage(from, '❌ पहले रजिस्ट्रेशन पूरा करें।')
+        return NextResponse.json({ success: true })
+      }
+
+      const profileMsg = `👤 *आपकी प्रोफाइल*\n\n📛 नाम: ${farmer.name}\n📍 पता: ${farmer.full_address || farmer.location}\n📮 पिनकोड: ${farmer.pincode}\n📞 फोन: ${farmer.phone}\n\n💡 अपडेट करने के लिए *मेनू* लिखें`
+
+      await sendWhatsAppMessage(from, profileMsg)
+      return NextResponse.json({ success: true })
+    }
+
+    // Handle profile updates with natural language
+    const lowerBody = body.toLowerCase()
+    
+    // Update name
+    if ((lowerBody.includes('नाम') && lowerBody.includes('बदल')) || 
+        (lowerBody.includes('name') && lowerBody.includes('change'))) {
+      if (!farmer) {
+        await sendWhatsAppMessage(from, '❌ पहले रजिस्ट्रेशन पूरा करें।')
+        return NextResponse.json({ success: true })
+      }
+
+      // Extract new name (everything after "बदलो" or "change")
+      const newName = body.replace(/.*?(बदलो|बदल|change)\s*/i, '').trim()
+      
+      if (!newName || newName.length < 2) {
+        await sendWhatsAppMessage(from, '❌ कृपया नया नाम बताएं।\n\nउदाहरण: नाम बदलो राज कुमार')
+        return NextResponse.json({ success: true })
+      }
+
+      await supabase
+        .from('farmers')
+        .update({ name: newName, updated_at: new Date().toISOString() })
+        .eq('phone', from)
+
+      await sendWhatsAppMessage(from, `✅ नाम अपडेट हो गया!\n\n📛 नया नाम: ${newName}`)
+      return NextResponse.json({ success: true })
+    }
+
+    // Update address
+    if ((lowerBody.includes('पता') && lowerBody.includes('बदल')) || 
+        (lowerBody.includes('address') && lowerBody.includes('change'))) {
+      if (!farmer) {
+        await sendWhatsAppMessage(from, '❌ पहले रजिस्ट्रेशन पूरा करें।')
+        return NextResponse.json({ success: true })
+      }
+
+      // Extract new address
+      const newAddress = body.replace(/.*?(बदलो|बदल|change)\s*/i, '').trim()
+      
+      if (!newAddress || newAddress.length < 10) {
+        await sendWhatsAppMessage(from, '❌ कृपया पूरा पता बताएं।\n\nउदाहरण: पता बदलो गाँव खेड़ा, पुणे, महाराष्ट्र')
+        return NextResponse.json({ success: true })
+      }
+
+      await supabase
+        .from('farmers')
+        .update({ full_address: newAddress, updated_at: new Date().toISOString() })
+        .eq('phone', from)
+
+      await sendWhatsAppMessage(from, `✅ पता अपडेट हो गया!\n\n📍 नया पता: ${newAddress}`)
+      return NextResponse.json({ success: true })
+    }
+
+    // Update pincode
+    if ((lowerBody.includes('पिनकोड') && lowerBody.includes('बदल')) || 
+        (lowerBody.includes('pincode') && lowerBody.includes('change'))) {
+      if (!farmer) {
+        await sendWhatsAppMessage(from, '❌ पहले रजिस्ट्रेशन पूरा करें।')
+        return NextResponse.json({ success: true })
+      }
+
+      // Extract pincode
+      const pincodeMatch = body.match(/\d{6}/)
+      
+      if (!pincodeMatch) {
+        await sendWhatsAppMessage(from, '❌ कृपया सही 6 अंकों का पिनकोड बताएं।\n\nउदाहरण: पिनकोड बदलो 411001')
+        return NextResponse.json({ success: true })
+      }
+
+      const newPincode = pincodeMatch[0]
+
+      try {
+        const coords = await getCoordinatesFromPincode(newPincode)
+        
+        await supabase
+          .from('farmers')
+          .update({ 
+            pincode: newPincode,
+            latitude: coords.lat,
+            longitude: coords.lon,
+            location: coords.display_name || farmer.location,
+            updated_at: new Date().toISOString()
+          })
+          .eq('phone', from)
+
+        await sendWhatsAppMessage(from, `✅ पिनकोड अपडेट हो गया!\n\n📮 नया पिनकोड: ${newPincode}\n📍 स्थान: ${coords.display_name}`)
+      } catch (error) {
+        await sendWhatsAppMessage(from, '❌ पिनकोड नहीं मिला। कृपया सही पिनकोड बताएं।')
+      }
+
+      return NextResponse.json({ success: true })
+    }
+
     // Handle general queries
     if (body.toLowerCase().includes('help') || body.toLowerCase().includes('मदद')) {
       const helpMsg = farmer 
-        ? `*FarmFast में आपका स्वागत है!* 🌾\n\n*फसल बेचने के लिए:*\n1️⃣ अपनी फसल की फोटो भेजें 📸\n2️⃣ मैं 10 सेकंड में क्वालिटी चेक करूंगा ✅\n3️⃣ कितने किलो बेचना है बताएं 📦\n4️⃣ खरीददारों को लिस्टिंग भेजी जाएगी 🎯\n5️⃣ ऑफर मिलने पर सूचना मिलेगी 📱\n\n*अभी फोटो भेजें!* 🚀`
-        : `*FarmFast में आपका स्वागत है!* 🌾\n\n*पहली बार इस्तेमाल कर रहे हैं?*\n1️⃣ अपना नाम बताएं\n2️⃣ अपना पिनकोड भेजें 📍\n3️⃣ फसल की फोटो भेजें 📸\n4️⃣ मैं क्वालिटी चेक करूंगा ✅\n5️⃣ खरीददारों से ऑफर मिलेंगे 💰\n\n*शुरू करने के लिए अपना नाम भेजें!*`
+        ? `*FarmFast में आपका स्वागत है!* 🌾\n\n*फसल बेचने के लिए:*\n1️⃣ अपनी फसल की फोटो भेजें 📸\n2️⃣ मैं 10 सेकंड में क्वालिटी चेक करूंगा ✅\n3️⃣ कितने किलो बेचना है बताएं 📦\n4️⃣ खरीददारों को लिस्टिंग भेजी जाएगी 🎯\n5️⃣ ऑफर मिलने पर सूचना मिलेगी 📱\n\n*अभी फोटो भेजें!* 🚀\n\n💡 *मेनू* लिखें प्रोफाइल देखने/अपडेट करने के लिए`
+        : `*FarmFast में आपका स्वागत है!* 🌾\n\n*पहली बार इस्तेमाल कर रहे हैं?*\n1️⃣ अपना नाम बताएं\n2️⃣ अपना पूरा पता भेजें 📍\n3️⃣ अपना पिनकोड भेजें 📮\n4️⃣ फसल की फोटो भेजें 📸\n5️⃣ मैं क्वालिटी चेक करूंगा ✅\n6️⃣ खरीददारों से ऑफर मिलेंगे 💰\n\n*शुरू करने के लिए अपना नाम भेजें!*`
       
       await sendWhatsAppMessage(from, helpMsg)
       return NextResponse.json({ success: true })
@@ -438,7 +585,7 @@ export async function POST(req: NextRequest) {
 
     // Default: ask for image or start registration
     const defaultMsg = farmer
-      ? '👋 नमस्ते! मैं FarmFast हूँ। 🌾\n\n📸 अपनी फसल की फोटो भेजें और मैं तुरंत:\n✅ क्वालिटी चेक करूंगा\n💰 सही भाव बताऊंगा\n🎯 खरीददारों से ऑफर दिलाऊंगा\n\n*अभी फोटो भेजें!*\n\n(मदद के लिए "help" टाइप करें)'
+      ? '👋 नमस्ते! मैं FarmFast हूँ। 🌾\n\n📸 अपनी फसल की फोटो भेजें और मैं तुरंत:\n✅ क्वालिटी चेक करूंगा\n💰 सही भाव बताऊंगा\n🎯 खरीददारों से ऑफर दिलाऊंगा\n\n*अभी फोटो भेजें!*\n\n💡 *मेनू* लिखें प्रोफाइल देखने के लिए\n(मदद के लिए "help" टाइप करें)'
       : '👋 नमस्ते! मैं FarmFast हूँ। 🌾\n\n*पहले अपना नाम बताएं:*\n\n(मदद के लिए "help" टाइप करें)'
 
     await sendWhatsAppMessage(from, defaultMsg)
