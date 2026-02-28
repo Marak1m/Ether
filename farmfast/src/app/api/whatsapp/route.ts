@@ -33,22 +33,22 @@ function isSessionStale(session: any): boolean {
 export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData()
-    
+
     const from = normalizePhone(formData.get('From') as string)
     const body = (formData.get('Body') as string || '').trim()
     const numMedia = parseInt(formData.get('NumMedia') as string || '0')
     const mediaUrl = numMedia > 0 ? formData.get('MediaUrl0') as string : null
-    
+
     console.log(`WhatsApp message from ${from}: "${body}", media: ${!!mediaUrl}`)
     console.log(`Session state check starting...`)
 
     // Ignore Twilio sandbox join/leave commands and confirmations
     const lowerBody = body.toLowerCase()
-    if (lowerBody.includes('join') || 
-        lowerBody.includes('stop') || 
-        lowerBody.includes('sandbox') ||
-        lowerBody.includes('you are all set') ||
-        body.startsWith('Twilio')) {
+    if (lowerBody.includes('join') ||
+      lowerBody.includes('stop') ||
+      lowerBody.includes('sandbox') ||
+      lowerBody.includes('you are all set') ||
+      body.startsWith('Twilio')) {
       console.log('Ignoring Twilio system message')
       return NextResponse.json({ success: true })
     }
@@ -75,14 +75,14 @@ export async function POST(req: NextRequest) {
       const resetState = farmer ? 'idle' : 'awaiting_name'
       await supabase
         .from('chat_sessions')
-        .update({ 
+        .update({
           conversation_state: resetState,
           last_message_at: new Date().toISOString()
         })
         .eq('farmer_phone', from)
-      
+
       session = { ...session, conversation_state: resetState }
-      
+
       if (farmer) {
         await sendWhatsAppMessage(from, '👋 नमस्ते! आपका पिछला सत्र समाप्त हो गया था।\n\n📸 अपनी फसल की फोटो भेजें और बेचना शुरू करें!\n\n💡 *मेनू* लिखें प्रोफाइल देखने के लिए')
         return NextResponse.json({ success: true })
@@ -93,15 +93,15 @@ export async function POST(req: NextRequest) {
       const initialState = farmer ? 'idle' : 'awaiting_name'
       const { data: newSession } = await supabase
         .from('chat_sessions')
-        .insert({ 
-          farmer_phone: from, 
+        .insert({
+          farmer_phone: from,
           conversation_state: initialState,
           last_message_at: new Date().toISOString()
         })
         .select()
         .single()
       session = newSession
-      
+
       // Send welcome message for new unregistered farmers
       if (!farmer) {
         const welcomeMsg = '🌾 *FarmFast में आपका स्वागत है!*\n\nपहले अपना नाम बताएं:'
@@ -111,13 +111,13 @@ export async function POST(req: NextRequest) {
     }
 
     // If farmer not registered, start registration flow
-    if (!farmer && 
-        session?.conversation_state !== 'awaiting_name' && 
-        session?.conversation_state !== 'awaiting_full_address' &&
-        session?.conversation_state !== 'awaiting_initial_location') {
+    if (!farmer &&
+      session?.conversation_state !== 'awaiting_name' &&
+      session?.conversation_state !== 'awaiting_full_address' &&
+      session?.conversation_state !== 'awaiting_initial_location') {
       await supabase
         .from('chat_sessions')
-        .update({ 
+        .update({
           conversation_state: 'awaiting_name',
           last_message_at: new Date().toISOString()
         })
@@ -132,7 +132,7 @@ export async function POST(req: NextRequest) {
     // Handle name input (registration step 1)
     if (session?.conversation_state === 'awaiting_name') {
       const name = body.trim()
-      
+
       if (!name || name.length < 2) {
         await sendWhatsAppMessage(from, '❌ कृपया अपना पूरा नाम बताएं।')
         return NextResponse.json({ success: true })
@@ -158,14 +158,14 @@ export async function POST(req: NextRequest) {
     if (session?.conversation_state === 'awaiting_full_address') {
       console.log(`Handling full address input: "${body}"`)
       const fullAddress = body.trim()
-      
-      if (!fullAddress || fullAddress.length < 10) {
+
+      if (!fullAddress || fullAddress.length < 5) {
         await sendWhatsAppMessage(from, '❌ कृपया पूरा पता बताएं। उदाहरण: गाँव/शहर, तहसील, जिला, राज्य')
         return NextResponse.json({ success: true })
       }
 
-      // Save address and ask for pincode
-      const { data: updatedSession } = await supabase
+      // Save address and transition to pincode step
+      const { data: updatedSession, error: updateError } = await supabase
         .from('chat_sessions')
         .update({
           temp_full_address: fullAddress,
@@ -175,8 +175,24 @@ export async function POST(req: NextRequest) {
         .eq('farmer_phone', from)
         .select()
         .single()
-      
-      session = updatedSession
+
+      if (updateError) {
+        console.error('Failed to save address in session:', updateError)
+        // Fallback: try updating without temp_full_address in case column is missing
+        await supabase
+          .from('chat_sessions')
+          .update({
+            conversation_state: 'awaiting_initial_location',
+            last_message_at: new Date().toISOString()
+          })
+          .eq('farmer_phone', from)
+
+        // Store address on session object in memory for this request
+        session = { ...session, conversation_state: 'awaiting_initial_location', temp_full_address: fullAddress }
+      } else {
+        session = updatedSession
+      }
+
       console.log(`Updated session state to: ${session?.conversation_state}`)
 
       const pincodeMsg = `✅ पता सहेजा गया!\n\n📮 अब अपना पिनकोड भेजें (6 अंक):\n\nउदाहरण: 411001`
@@ -189,30 +205,46 @@ export async function POST(req: NextRequest) {
     if (session?.conversation_state === 'awaiting_initial_location') {
       console.log(`Handling pincode input: "${body}"`)
       const pincode = body.replace(/\s/g, '')
-      
+
       if (!/^\d{6}$/.test(pincode)) {
         await sendWhatsAppMessage(from, '❌ कृपया सही 6 अंकों का पिनकोड भेजें। उदाहरण: 411001')
         return NextResponse.json({ success: true })
       }
 
       try {
-        const coords = await getCoordinatesFromPincode(pincode)
-        
-        // Create farmer profile with full address
-        await supabase
+        // Geocode the pincode
+        let coords = { lat: 0, lon: 0, display_name: 'India' }
+        try {
+          coords = await getCoordinatesFromPincode(pincode)
+        } catch (geoError) {
+          console.error('Geocoding failed, using defaults:', geoError)
+          // Continue with default coords so registration isn't blocked
+        }
+
+        const farmerName = session.farmer_name || 'Farmer'
+        const farmerAddress = session.temp_full_address || ''
+
+        // Create or update farmer profile (upsert to handle duplicate phone)
+        const { error: farmerError } = await supabase
           .from('farmers')
-          .insert({
+          .upsert({
             phone: from,
-            name: session.farmer_name,
-            full_address: session.temp_full_address,
+            name: farmerName,
+            full_address: farmerAddress,
             location: coords.display_name || 'India',
             pincode: pincode,
             latitude: coords.lat,
             longitude: coords.lon
-          })
+          }, { onConflict: 'phone' })
+
+        if (farmerError) {
+          console.error('Failed to create/update farmer:', farmerError)
+          await sendWhatsAppMessage(from, '❌ रजिस्ट्रेशन में समस्या आई। कृपया दोबारा कोशिश करें।')
+          return NextResponse.json({ success: true })
+        }
 
         // Update session to idle (registration complete)
-        await supabase
+        const { error: sessionUpdateError } = await supabase
           .from('chat_sessions')
           .update({
             conversation_state: 'idle',
@@ -222,12 +254,24 @@ export async function POST(req: NextRequest) {
           })
           .eq('farmer_phone', from)
 
-        const successMsg = `✅ रजिस्ट्रेशन पूरा हुआ!\n\n👤 नाम: ${session.farmer_name}\n📍 पता: ${session.temp_full_address}\n📮 पिनकोड: ${pincode}\n\n📸 अब अपनी फसल की फोटो भेजें और बेचना शुरू करें! 🚀\n\n💡 *मेनू* लिखें प्रोफाइल अपडेट करने के लिए`
+        if (sessionUpdateError) {
+          console.error('Session update error (non-critical):', sessionUpdateError)
+          // Fallback: just update the state without optional columns
+          await supabase
+            .from('chat_sessions')
+            .update({
+              conversation_state: 'idle',
+              last_message_at: new Date().toISOString()
+            })
+            .eq('farmer_phone', from)
+        }
+
+        const successMsg = `✅ रजिस्ट्रेशन पूरा हुआ!\n\n👤 नाम: ${farmerName}\n📍 पता: ${farmerAddress}\n📮 पिनकोड: ${pincode}\n\n📸 अब अपनी फसल की फोटो भेजें और बेचना शुरू करें! 🚀\n\n💡 *मेनू* लिखें प्रोफाइल अपडेट करने के लिए`
         await sendWhatsAppMessage(from, successMsg)
 
       } catch (error) {
-        console.error('Geocoding error:', error)
-        await sendWhatsAppMessage(from, '❌ पिनकोड नहीं मिला। कृपया दूसरा पिनकोड भेजें।')
+        console.error('Registration error:', error)
+        await sendWhatsAppMessage(from, '❌ रजिस्ट्रेशन में समस्या आई। कृपया दोबारा पिनकोड भेजें।')
       }
 
       return NextResponse.json({ success: true })
@@ -303,14 +347,14 @@ export async function POST(req: NextRequest) {
           '❌ माफ करें, फोटो की जांच में समस्या आई।\n\nकृपया दोबारा कोशिश करें:\n📸 अच्छी रोशनी में साफ फोटो भेजें\n📷 पूरी फसल दिखनी चाहिए\n\nफिर से फोटो भेजें!'
         )
       }
-      
+
       return NextResponse.json({ success: true })
     }
 
     // Handle location (pincode) input
     if (session?.conversation_state === 'awaiting_location') {
       const pincode = body.replace(/\s/g, '')
-      
+
       if (!/^\d{6}$/.test(pincode)) {
         await sendWhatsAppMessage(
           from,
@@ -321,7 +365,7 @@ export async function POST(req: NextRequest) {
 
       try {
         const coords = await getCoordinatesFromPincode(pincode)
-        
+
         await supabase
           .from('listings')
           .update({
@@ -358,7 +402,7 @@ export async function POST(req: NextRequest) {
     // Handle quantity input
     if (session?.conversation_state === 'awaiting_quantity') {
       const quantity = parseInt(body)
-      
+
       if (isNaN(quantity) || quantity <= 0) {
         await sendWhatsAppMessage(
           from,
@@ -404,7 +448,7 @@ export async function POST(req: NextRequest) {
           .select('*', { count: 'exact', head: true })
           .not('latitude', 'is', null)
           .not('longitude', 'is', null)
-        
+
         buyerCount = count || 0
       }
 
@@ -473,7 +517,7 @@ export async function POST(req: NextRequest) {
           from,
           `✅ ऑफर स्वीकार किया गया!\n\n*खरीददार:* ${selectedOffer.buyer_name}\n*भाव:* ₹${selectedOffer.price_per_kg}/किलो\n*कुल:* ₹${selectedOffer.total_amount}\n\n💰 खरीददार ने पेमेंट जमा कर दिया है।\n📞 खरीददार आपसे जल्द संपर्क करेगा।\n\nमाल देने के बाद "माल दे दिया" लिखकर भेजें, तो पैसा तुरंत आपके खाते में आ जाएगा। 🎉`
         )
-        
+
         await supabase
           .from('chat_sessions')
           .update({
@@ -481,7 +525,7 @@ export async function POST(req: NextRequest) {
             last_message_at: new Date().toISOString()
           })
           .eq('farmer_phone', from)
-        
+
         return NextResponse.json({ success: true })
       }
 
@@ -510,7 +554,7 @@ export async function POST(req: NextRequest) {
           from,
           '🎉 *बधाई हो!*\n\n✅ पेमेंट आपके खाते में भेज दिया गया है।\n\n💰 30 सेकंड में पैसा आ जाएगा।\n\n🙏 FarmFast इस्तेमाल करने के लिए धन्यवाद!\n\nअगली बार फिर से फसल बेचने के लिए फोटो भेजें। 📸'
         )
-        
+
         await supabase
           .from('chat_sessions')
           .update({
@@ -519,7 +563,7 @@ export async function POST(req: NextRequest) {
             last_message_at: new Date().toISOString()
           })
           .eq('farmer_phone', from)
-        
+
         return NextResponse.json({ success: true })
       }
 
@@ -555,17 +599,17 @@ export async function POST(req: NextRequest) {
     }
 
     // Handle profile updates with natural language
-    
+
     // Update name
-    if ((lowerBody.includes('नाम') && lowerBody.includes('बदल')) || 
-        (lowerBody.includes('name') && lowerBody.includes('change'))) {
+    if ((lowerBody.includes('नाम') && lowerBody.includes('बदल')) ||
+      (lowerBody.includes('name') && lowerBody.includes('change'))) {
       if (!farmer) {
         await sendWhatsAppMessage(from, '❌ पहले रजिस्ट्रेशन पूरा करें।')
         return NextResponse.json({ success: true })
       }
 
       const newName = body.replace(/.*?(बदलो|बदल|change)\s*/i, '').trim()
-      
+
       if (!newName || newName.length < 2) {
         await sendWhatsAppMessage(from, '❌ कृपया नया नाम बताएं।\n\nउदाहरण: नाम बदलो राज कुमार')
         return NextResponse.json({ success: true })
@@ -581,15 +625,15 @@ export async function POST(req: NextRequest) {
     }
 
     // Update address
-    if ((lowerBody.includes('पता') && lowerBody.includes('बदल')) || 
-        (lowerBody.includes('address') && lowerBody.includes('change'))) {
+    if ((lowerBody.includes('पता') && lowerBody.includes('बदल')) ||
+      (lowerBody.includes('address') && lowerBody.includes('change'))) {
       if (!farmer) {
         await sendWhatsAppMessage(from, '❌ पहले रजिस्ट्रेशन पूरा करें।')
         return NextResponse.json({ success: true })
       }
 
       const newAddress = body.replace(/.*?(बदलो|बदल|change)\s*/i, '').trim()
-      
+
       if (!newAddress || newAddress.length < 10) {
         await sendWhatsAppMessage(from, '❌ कृपया पूरा पता बताएं।\n\nउदाहरण: पता बदलो गाँव खेड़ा, पुणे, महाराष्ट्र')
         return NextResponse.json({ success: true })
@@ -605,15 +649,15 @@ export async function POST(req: NextRequest) {
     }
 
     // Update pincode
-    if ((lowerBody.includes('पिनकोड') && lowerBody.includes('बदल')) || 
-        (lowerBody.includes('pincode') && lowerBody.includes('change'))) {
+    if ((lowerBody.includes('पिनकोड') && lowerBody.includes('बदल')) ||
+      (lowerBody.includes('pincode') && lowerBody.includes('change'))) {
       if (!farmer) {
         await sendWhatsAppMessage(from, '❌ पहले रजिस्ट्रेशन पूरा करें।')
         return NextResponse.json({ success: true })
       }
 
       const pincodeMatch = body.match(/\d{6}/)
-      
+
       if (!pincodeMatch) {
         await sendWhatsAppMessage(from, '❌ कृपया सही 6 अंकों का पिनकोड बताएं।\n\nउदाहरण: पिनकोड बदलो 411001')
         return NextResponse.json({ success: true })
@@ -623,10 +667,10 @@ export async function POST(req: NextRequest) {
 
       try {
         const coords = await getCoordinatesFromPincode(newPincode)
-        
+
         await supabase
           .from('farmers')
-          .update({ 
+          .update({
             pincode: newPincode,
             latitude: coords.lat,
             longitude: coords.lon,
@@ -645,10 +689,10 @@ export async function POST(req: NextRequest) {
 
     // Handle general queries
     if (lowerBody.includes('help') || lowerBody.includes('मदद')) {
-      const helpMsg = farmer 
+      const helpMsg = farmer
         ? `*FarmFast में आपका स्वागत है!* 🌾\n\n*फसल बेचने के लिए:*\n1️⃣ अपनी फसल की फोटो भेजें 📸\n2️⃣ मैं 10 सेकंड में क्वालिटी चेक करूंगा ✅\n3️⃣ कितने किलो बेचना है बताएं 📦\n4️⃣ खरीददारों को लिस्टिंग भेजी जाएगी 🎯\n5️⃣ ऑफर मिलने पर सूचना मिलेगी 📱\n\n*अभी फोटो भेजें!* 🚀\n\n💡 *मेनू* लिखें प्रोफाइल देखने/अपडेट करने के लिए`
         : `*FarmFast में आपका स्वागत है!* 🌾\n\n*पहली बार इस्तेमाल कर रहे हैं?*\n1️⃣ अपना नाम बताएं\n2️⃣ अपना पूरा पता भेजें 📍\n3️⃣ अपना पिनकोड भेजें 📮\n4️⃣ फसल की फोटो भेजें 📸\n5️⃣ मैं क्वालिटी चेक करूंगा ✅\n6️⃣ खरीददारों से ऑफर मिलेंगे 💰\n\n*शुरू करने के लिए अपना नाम भेजें!*`
-      
+
       await sendWhatsAppMessage(from, helpMsg)
       return NextResponse.json({ success: true })
     }
@@ -691,7 +735,7 @@ export async function POST(req: NextRequest) {
     await sendWhatsAppMessage(from, defaultMsg)
 
     return NextResponse.json({ success: true })
-    
+
   } catch (error) {
     console.error('WhatsApp webhook error:', error)
     return NextResponse.json(
