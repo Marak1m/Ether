@@ -5,11 +5,36 @@ import { sendWhatsAppMessage, formatPhoneNumber } from '@/lib/twilio'
 import { getCoordinatesFromPincode } from '@/lib/geocoding'
 import axios from 'axios'
 
+// Normalize phone numbers to consistent format (+91XXXXXXXXXX)
+function normalizePhone(phone: string): string {
+  let cleaned = formatPhoneNumber(phone).replace(/[\s\-()]/g, '')
+  // Ensure +91 prefix for Indian numbers
+  if (cleaned.startsWith('91') && !cleaned.startsWith('+')) {
+    cleaned = '+' + cleaned
+  }
+  if (cleaned.startsWith('0')) {
+    cleaned = '+91' + cleaned.substring(1)
+  }
+  if (!cleaned.startsWith('+')) {
+    cleaned = '+91' + cleaned
+  }
+  return cleaned
+}
+
+// Check if a session is stale (older than 24 hours without activity)
+function isSessionStale(session: any): boolean {
+  if (!session?.last_message_at) return false
+  const lastMessage = new Date(session.last_message_at).getTime()
+  const now = Date.now()
+  const STALE_THRESHOLD_MS = 24 * 60 * 60 * 1000 // 24 hours
+  return (now - lastMessage) > STALE_THRESHOLD_MS
+}
+
 export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData()
     
-    const from = formatPhoneNumber(formData.get('From') as string)
+    const from = normalizePhone(formData.get('From') as string)
     const body = (formData.get('Body') as string || '').trim()
     const numMedia = parseInt(formData.get('NumMedia') as string || '0')
     const mediaUrl = numMedia > 0 ? formData.get('MediaUrl0') as string : null
@@ -18,11 +43,11 @@ export async function POST(req: NextRequest) {
     console.log(`Session state check starting...`)
 
     // Ignore Twilio sandbox join/leave commands and confirmations
-    const bodyLower = body.toLowerCase()
-    if (bodyLower.includes('join') || 
-        bodyLower.includes('stop') || 
-        bodyLower.includes('sandbox') ||
-        bodyLower.includes('you are all set') ||
+    const lowerBody = body.toLowerCase()
+    if (lowerBody.includes('join') || 
+        lowerBody.includes('stop') || 
+        lowerBody.includes('sandbox') ||
+        lowerBody.includes('you are all set') ||
         body.startsWith('Twilio')) {
       console.log('Ignoring Twilio system message')
       return NextResponse.json({ success: true })
@@ -44,13 +69,34 @@ export async function POST(req: NextRequest) {
 
     console.log(`Session found: ${session ? 'YES' : 'NO'}, State: ${session?.conversation_state}`)
 
+    // Reset stale sessions (stuck for >24h in a non-idle state)
+    if (session && isSessionStale(session) && session.conversation_state !== 'idle' && session.conversation_state !== 'listing_active') {
+      console.log(`Resetting stale session (state: ${session.conversation_state}, last active: ${session.last_message_at})`)
+      const resetState = farmer ? 'idle' : 'awaiting_name'
+      await supabase
+        .from('chat_sessions')
+        .update({ 
+          conversation_state: resetState,
+          last_message_at: new Date().toISOString()
+        })
+        .eq('farmer_phone', from)
+      
+      session = { ...session, conversation_state: resetState }
+      
+      if (farmer) {
+        await sendWhatsAppMessage(from, '👋 नमस्ते! आपका पिछला सत्र समाप्त हो गया था।\n\n📸 अपनी फसल की फोटो भेजें और बेचना शुरू करें!\n\n💡 *मेनू* लिखें प्रोफाइल देखने के लिए')
+        return NextResponse.json({ success: true })
+      }
+    }
+
     if (!session) {
       const initialState = farmer ? 'idle' : 'awaiting_name'
       const { data: newSession } = await supabase
         .from('chat_sessions')
         .insert({ 
           farmer_phone: from, 
-          conversation_state: initialState
+          conversation_state: initialState,
+          last_message_at: new Date().toISOString()
         })
         .select()
         .single()
@@ -71,14 +117,14 @@ export async function POST(req: NextRequest) {
         session?.conversation_state !== 'awaiting_initial_location') {
       await supabase
         .from('chat_sessions')
-        .update({ conversation_state: 'awaiting_name' })
+        .update({ 
+          conversation_state: 'awaiting_name',
+          last_message_at: new Date().toISOString()
+        })
         .eq('farmer_phone', from)
 
       const welcomeMsg = '🌾 *FarmFast में आपका स्वागत है!*\n\nपहले अपना नाम बताएं:'
       await sendWhatsAppMessage(from, welcomeMsg)
-      
-      // Voice messages disabled - Twilio WhatsApp doesn't support data URLs
-      // TODO: Upload audio to Supabase Storage and use public URL
 
       return NextResponse.json({ success: true })
     }
@@ -105,7 +151,6 @@ export async function POST(req: NextRequest) {
       const addressMsg = `धन्यवाद ${name} जी! 🙏\n\n📍 अब अपना पूरा पता बताएं:\n\nउदाहरण: गाँव/शहर, तहसील, जिला, राज्य`
       await sendWhatsAppMessage(from, addressMsg)
 
-      // Voice messages disabled
       return NextResponse.json({ success: true })
     }
 
@@ -131,7 +176,7 @@ export async function POST(req: NextRequest) {
         .select()
         .single()
       
-      session = updatedSession // Update local session variable
+      session = updatedSession
       console.log(`Updated session state to: ${session?.conversation_state}`)
 
       const pincodeMsg = `✅ पता सहेजा गया!\n\n📮 अब अपना पिनकोड भेजें (6 अंक):\n\nउदाहरण: 411001`
@@ -180,8 +225,6 @@ export async function POST(req: NextRequest) {
         const successMsg = `✅ रजिस्ट्रेशन पूरा हुआ!\n\n👤 नाम: ${session.farmer_name}\n📍 पता: ${session.temp_full_address}\n📮 पिनकोड: ${pincode}\n\n📸 अब अपनी फसल की फोटो भेजें और बेचना शुरू करें! 🚀\n\n💡 *मेनू* लिखें प्रोफाइल अपडेट करने के लिए`
         await sendWhatsAppMessage(from, successMsg)
 
-        // Voice messages disabled
-
       } catch (error) {
         console.error('Geocoding error:', error)
         await sendWhatsAppMessage(from, '❌ पिनकोड नहीं मिला। कृपया दूसरा पिनकोड भेजें।')
@@ -195,66 +238,71 @@ export async function POST(req: NextRequest) {
       const processingMsg = 'आपकी फसल की जांच हो रही है... कृपया 10 सेकंड प्रतीक्षा करें। ⏳'
       await sendWhatsAppMessage(from, processingMsg)
 
-      // Voice messages disabled
-
-      // Download image from Twilio
-      const imageResponse = await axios.get(mediaUrl, {
-        responseType: 'arraybuffer',
-        auth: {
-          username: process.env.TWILIO_ACCOUNT_SID!,
-          password: process.env.TWILIO_AUTH_TOKEN!
-        }
-      })
-      const imageBase64 = Buffer.from(imageResponse.data).toString('base64')
-
-      // Grade with Gemini
-      const gradeResult = await gradeProduceImage(imageBase64)
-
-      // Save listing to database (without location yet)
-      const { data: listing, error } = await supabase
-        .from('listings')
-        .insert({
-          farmer_phone: from,
-          farmer_id: farmer?.id,
-          crop_type: gradeResult.crop_type,
-          quality_grade: gradeResult.grade,
-          quantity_kg: 0, // Will ask next
-          location: farmer?.location || 'India',
-          full_address: farmer?.full_address,
-          pincode: farmer?.pincode,
-          latitude: farmer?.latitude,
-          longitude: farmer?.longitude,
-          price_range_min: gradeResult.price_range_min,
-          price_range_max: gradeResult.price_range_max,
-          shelf_life_days: gradeResult.shelf_life_days,
-          image_url: mediaUrl,
-          hindi_summary: gradeResult.hindi_summary,
-          confidence_score: gradeResult.confidence,
-          quality_factors: gradeResult.quality_factors,
-          status: 'active'
+      try {
+        // Download image from Twilio
+        const imageResponse = await axios.get(mediaUrl, {
+          responseType: 'arraybuffer',
+          auth: {
+            username: process.env.TWILIO_ACCOUNT_SID!,
+            password: process.env.TWILIO_AUTH_TOKEN!
+          }
         })
-        .select()
-        .single()
+        const imageBase64 = Buffer.from(imageResponse.data).toString('base64')
 
-      if (error) throw error
+        // Grade with Gemini
+        const gradeResult = await gradeProduceImage(imageBase64)
 
-      // Update session to ask for quantity (skip location if farmer registered)
-      await supabase
-        .from('chat_sessions')
-        .update({
-          current_listing_id: listing.id,
-          conversation_state: farmer ? 'awaiting_quantity' : 'awaiting_location',
-          last_message_at: new Date().toISOString()
-        })
-        .eq('farmer_phone', from)
+        // Save listing to database
+        const { data: listing, error } = await supabase
+          .from('listings')
+          .insert({
+            farmer_phone: from,
+            farmer_id: farmer?.id,
+            crop_type: gradeResult.crop_type,
+            quality_grade: gradeResult.grade,
+            quantity_kg: 0,
+            location: farmer?.location || 'India',
+            full_address: farmer?.full_address,
+            pincode: farmer?.pincode,
+            latitude: farmer?.latitude,
+            longitude: farmer?.longitude,
+            price_range_min: gradeResult.price_range_min,
+            price_range_max: gradeResult.price_range_max,
+            shelf_life_days: gradeResult.shelf_life_days,
+            image_url: mediaUrl,
+            hindi_summary: gradeResult.hindi_summary,
+            confidence_score: gradeResult.confidence,
+            quality_factors: gradeResult.quality_factors,
+            status: 'active'
+          })
+          .select()
+          .single()
 
-      // Send grade result
-      const gradeEmoji = gradeResult.grade === 'A' ? '🌟' : gradeResult.grade === 'B' ? '✅' : '👍'
-      const message = `${gradeEmoji} *ग्रेड ${gradeResult.grade}*\n\n${gradeResult.hindi_summary}\n\n*उचित भाव:* ₹${gradeResult.price_range_min}-${gradeResult.price_range_max}/किलो\n*ताजगी:* ${gradeResult.shelf_life_days} दिन\n\n${farmer ? '📦 अब कितने किलो बेचना है? कृपया संख्या भेजें (जैसे: 500)' : '📍 अब अपना पिनकोड भेजें (जैसे: 411001)'}`
+        if (error) throw error
 
-      await sendWhatsAppMessage(from, message)
+        // Update session to ask for quantity
+        await supabase
+          .from('chat_sessions')
+          .update({
+            current_listing_id: listing.id,
+            conversation_state: farmer ? 'awaiting_quantity' : 'awaiting_location',
+            last_message_at: new Date().toISOString()
+          })
+          .eq('farmer_phone', from)
 
-      // Voice messages disabled
+        // Send grade result
+        const gradeEmoji = gradeResult.grade === 'A' ? '🌟' : gradeResult.grade === 'B' ? '✅' : '👍'
+        const message = `${gradeEmoji} *ग्रेड ${gradeResult.grade}*\n\n${gradeResult.hindi_summary}\n\n*उचित भाव:* ₹${gradeResult.price_range_min}-${gradeResult.price_range_max}/किलो\n*ताजगी:* ${gradeResult.shelf_life_days} दिन\n\n${farmer ? '📦 अब कितने किलो बेचना है? कृपया संख्या भेजें (जैसे: 500)' : '📍 अब अपना पिनकोड भेजें (जैसे: 411001)'}`
+
+        await sendWhatsAppMessage(from, message)
+      } catch (error) {
+        console.error('Image grading error:', error)
+        // Send user-friendly error instead of leaving farmer hanging
+        await sendWhatsAppMessage(
+          from,
+          '❌ माफ करें, फोटो की जांच में समस्या आई।\n\nकृपया दोबारा कोशिश करें:\n📸 अच्छी रोशनी में साफ फोटो भेजें\n📷 पूरी फसल दिखनी चाहिए\n\nफिर से फोटो भेजें!'
+        )
+      }
       
       return NextResponse.json({ success: true })
     }
@@ -263,7 +311,6 @@ export async function POST(req: NextRequest) {
     if (session?.conversation_state === 'awaiting_location') {
       const pincode = body.replace(/\s/g, '')
       
-      // Validate pincode (6 digits)
       if (!/^\d{6}$/.test(pincode)) {
         await sendWhatsAppMessage(
           from,
@@ -273,10 +320,8 @@ export async function POST(req: NextRequest) {
       }
 
       try {
-        // Get coordinates from pincode
         const coords = await getCoordinatesFromPincode(pincode)
         
-        // Update listing with location
         await supabase
           .from('listings')
           .update({
@@ -287,7 +332,6 @@ export async function POST(req: NextRequest) {
           })
           .eq('id', session.current_listing_id)
 
-        // Update session to ask for quantity
         await supabase
           .from('chat_sessions')
           .update({
@@ -346,15 +390,14 @@ export async function POST(req: NextRequest) {
         })
         .eq('farmer_phone', from)
 
-      // Get listing details for broadcast count
+      // Count nearby buyers
+      let buyerCount = 0
       const { data: listing } = await supabase
         .from('listings')
         .select('*')
         .eq('id', session.current_listing_id)
         .single()
 
-      // Count nearby buyers (within 20km)
-      let buyerCount = 0
       if (listing?.latitude && listing?.longitude) {
         const { count } = await supabase
           .from('buyers')
@@ -375,13 +418,60 @@ export async function POST(req: NextRequest) {
 
     // Handle offer acceptance
     if (session?.conversation_state === 'reviewing_offers') {
-      const lowerBody = body.toLowerCase()
-      
-      if (lowerBody.includes('पहला') || lowerBody.includes('1') || lowerBody.includes('first')) {
-        // Accept first offer
+      // Fetch all pending offers for this listing
+      const { data: offers } = await supabase
+        .from('offers')
+        .select('*')
+        .eq('listing_id', session.current_listing_id)
+        .eq('status', 'pending')
+        .order('price_per_kg', { ascending: false })
+
+      if (!offers || offers.length === 0) {
+        await sendWhatsAppMessage(from, '❌ अभी कोई पेंडिंग ऑफर नहीं है।\n\n⏳ नए ऑफर का इंतजार करें।')
+        return NextResponse.json({ success: true })
+      }
+
+      // Check if farmer wants to see offers list
+      if (lowerBody === 'offers' || lowerBody === 'ऑफर' || lowerBody === 'list' || lowerBody === 'सूची') {
+        let offerList = '📋 *आपके ऑफर:*\n\n'
+        offers.forEach((offer, index) => {
+          offerList += `*${index + 1}.* ${offer.buyer_name}\n   💰 ₹${offer.price_per_kg}/किलो (कुल ₹${offer.total_amount})\n   ⏰ ${offer.pickup_time}\n\n`
+        })
+        offerList += '✅ ऑफर स्वीकार करने के लिए नंबर भेजें (जैसे: 1, 2, 3)'
+        await sendWhatsAppMessage(from, offerList)
+        return NextResponse.json({ success: true })
+      }
+
+      // Check if farmer selected an offer by number
+      const offerNumber = parseInt(body)
+      const acceptByKeyword = lowerBody.includes('पहला') || lowerBody.includes('first') || lowerBody.includes('हां') || lowerBody.includes('हाँ') || lowerBody.includes('yes') || lowerBody.includes('ठीक')
+
+      let selectedOffer = null
+      if (!isNaN(offerNumber) && offerNumber >= 1 && offerNumber <= offers.length) {
+        selectedOffer = offers[offerNumber - 1]
+      } else if (acceptByKeyword) {
+        selectedOffer = offers[0] // Accept highest offer
+      }
+
+      if (selectedOffer) {
+        // Accept the selected offer
+        await supabase
+          .from('offers')
+          .update({ status: 'accepted' })
+          .eq('id', selectedOffer.id)
+
+        // Reject other offers
+        const otherOfferIds = offers.filter(o => o.id !== selectedOffer!.id).map(o => o.id)
+        if (otherOfferIds.length > 0) {
+          await supabase
+            .from('offers')
+            .update({ status: 'rejected' })
+            .in('id', otherOfferIds)
+        }
+
         await sendWhatsAppMessage(
           from,
-          '✅ ऑफर स्वीकार किया गया!\n\n💰 खरीददार ने पेमेंट जमा कर दिया है।\n\n📞 खरीददार आपसे जल्द संपर्क करेगा।\n\nमाल देने के बाद "माल दे दिया" लिखकर भेजें, तो पैसा तुरंत आपके खाते में आ जाएगा। 🎉'
+          `✅ ऑफर स्वीकार किया गया!\n\n*खरीददार:* ${selectedOffer.buyer_name}\n*भाव:* ₹${selectedOffer.price_per_kg}/किलो\n*कुल:* ₹${selectedOffer.total_amount}\n\n💰 खरीददार ने पेमेंट जमा कर दिया है।\n📞 खरीददार आपसे जल्द संपर्क करेगा।\n\nमाल देने के बाद "माल दे दिया" लिखकर भेजें, तो पैसा तुरंत आपके खाते में आ जाएगा। 🎉`
         )
         
         await supabase
@@ -394,13 +484,28 @@ export async function POST(req: NextRequest) {
         
         return NextResponse.json({ success: true })
       }
+
+      // Unrecognized input in reviewing_offers — show help
+      let offerList = '📋 *आपके ऑफर:*\n\n'
+      offers.forEach((offer, index) => {
+        offerList += `*${index + 1}.* ${offer.buyer_name} — ₹${offer.price_per_kg}/किलो\n`
+      })
+      offerList += '\n✅ ऑफर स्वीकार करने के लिए नंबर भेजें (जैसे: 1)\n💡 "ऑफर" लिखें पूरी जानकारी देखने के लिए'
+      await sendWhatsAppMessage(from, offerList)
+      return NextResponse.json({ success: true })
     }
 
     // Handle handover confirmation
     if (session?.conversation_state === 'awaiting_handover_confirmation') {
-      const lowerBody = body.toLowerCase()
-      
-      if (lowerBody.includes('माल') || lowerBody.includes('दे दिया') || lowerBody.includes('delivered')) {
+      if (lowerBody.includes('माल') || lowerBody.includes('दे दिया') || lowerBody.includes('delivered') || lowerBody.includes('done') || lowerBody.includes('हो गया')) {
+        // Update listing status to sold
+        if (session.current_listing_id) {
+          await supabase
+            .from('listings')
+            .update({ status: 'sold' })
+            .eq('id', session.current_listing_id)
+        }
+
         await sendWhatsAppMessage(
           from,
           '🎉 *बधाई हो!*\n\n✅ पेमेंट आपके खाते में भेज दिया गया है।\n\n💰 30 सेकंड में पैसा आ जाएगा।\n\n🙏 FarmFast इस्तेमाल करने के लिए धन्यवाद!\n\nअगली बार फिर से फसल बेचने के लिए फोटो भेजें। 📸'
@@ -417,10 +522,14 @@ export async function POST(req: NextRequest) {
         
         return NextResponse.json({ success: true })
       }
+
+      // Unrecognized input while waiting for handover
+      await sendWhatsAppMessage(from, '📦 माल देने के बाद "माल दे दिया" लिखकर भेजें।\n\n❓ कोई समस्या है? "help" लिखें।')
+      return NextResponse.json({ success: true })
     }
 
     // Handle menu command
-    if (body.toLowerCase().includes('menu') || body.toLowerCase().includes('मेनू')) {
+    if (lowerBody.includes('menu') || lowerBody.includes('मेनू')) {
       if (!farmer) {
         await sendWhatsAppMessage(from, '❌ पहले रजिस्ट्रेशन पूरा करें।')
         return NextResponse.json({ success: true })
@@ -433,7 +542,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Handle profile view
-    if (body.toLowerCase().includes('profile') || body.toLowerCase().includes('प्रोफाइल')) {
+    if (lowerBody.includes('profile') || lowerBody.includes('प्रोफाइल')) {
       if (!farmer) {
         await sendWhatsAppMessage(from, '❌ पहले रजिस्ट्रेशन पूरा करें।')
         return NextResponse.json({ success: true })
@@ -446,7 +555,6 @@ export async function POST(req: NextRequest) {
     }
 
     // Handle profile updates with natural language
-    const lowerBody = body.toLowerCase()
     
     // Update name
     if ((lowerBody.includes('नाम') && lowerBody.includes('बदल')) || 
@@ -456,7 +564,6 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: true })
       }
 
-      // Extract new name (everything after "बदलो" or "change")
       const newName = body.replace(/.*?(बदलो|बदल|change)\s*/i, '').trim()
       
       if (!newName || newName.length < 2) {
@@ -481,7 +588,6 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: true })
       }
 
-      // Extract new address
       const newAddress = body.replace(/.*?(बदलो|बदल|change)\s*/i, '').trim()
       
       if (!newAddress || newAddress.length < 10) {
@@ -506,7 +612,6 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: true })
       }
 
-      // Extract pincode
       const pincodeMatch = body.match(/\d{6}/)
       
       if (!pincodeMatch) {
@@ -539,7 +644,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Handle general queries
-    if (body.toLowerCase().includes('help') || body.toLowerCase().includes('मदद')) {
+    if (lowerBody.includes('help') || lowerBody.includes('मदद')) {
       const helpMsg = farmer 
         ? `*FarmFast में आपका स्वागत है!* 🌾\n\n*फसल बेचने के लिए:*\n1️⃣ अपनी फसल की फोटो भेजें 📸\n2️⃣ मैं 10 सेकंड में क्वालिटी चेक करूंगा ✅\n3️⃣ कितने किलो बेचना है बताएं 📦\n4️⃣ खरीददारों को लिस्टिंग भेजी जाएगी 🎯\n5️⃣ ऑफर मिलने पर सूचना मिलेगी 📱\n\n*अभी फोटो भेजें!* 🚀\n\n💡 *मेनू* लिखें प्रोफाइल देखने/अपडेट करने के लिए`
         : `*FarmFast में आपका स्वागत है!* 🌾\n\n*पहली बार इस्तेमाल कर रहे हैं?*\n1️⃣ अपना नाम बताएं\n2️⃣ अपना पूरा पता भेजें 📍\n3️⃣ अपना पिनकोड भेजें 📮\n4️⃣ फसल की फोटो भेजें 📸\n5️⃣ मैं क्वालिटी चेक करूंगा ✅\n6️⃣ खरीददारों से ऑफर मिलेंगे 💰\n\n*शुरू करने के लिए अपना नाम भेजें!*`
@@ -549,7 +654,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Check for status query
-    if (body.toLowerCase().includes('status') || body.toLowerCase().includes('स्थिति')) {
+    if (lowerBody.includes('status') || lowerBody.includes('स्थिति')) {
       if (session?.current_listing_id) {
         const { data: listing } = await supabase
           .from('listings')
@@ -565,7 +670,7 @@ export async function POST(req: NextRequest) {
 
           await sendWhatsAppMessage(
             from,
-            `📊 *आपकी लिस्टिंग की स्थिति:*\n\n🌾 फसल: ${listing.crop_type}\n⭐ ग्रेड: ${listing.quality_grade}\n📦 मात्रा: ${listing.quantity_kg} किलो\n💰 ऑफर: ${offerCount || 0}\n\n${offerCount && offerCount > 0 ? '✅ ऑफर आ गए हैं! जल्द ही आपको सूचना मिलेगी।' : '⏳ ऑफर का इंतजार है...'}`
+            `📊 *आपकी लिस्टिंग की स्थिति:*\n\n🌾 फसल: ${listing.crop_type}\n⭐ ग्रेड: ${listing.quality_grade}\n📦 मात्रा: ${listing.quantity_kg} किलो\n💰 ऑफर: ${offerCount || 0}\n\n${offerCount && offerCount > 0 ? '✅ ऑफर आ गए हैं! "ऑफर" लिखें देखने के लिए।' : '⏳ ऑफर का इंतजार है...'}`
           )
           return NextResponse.json({ success: true })
         }

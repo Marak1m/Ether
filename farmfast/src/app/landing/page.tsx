@@ -1,39 +1,78 @@
 'use client'
 
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { Leaf, Zap, Shield, TrendingUp, MapPin, Smartphone, ArrowRight, CheckCircle } from 'lucide-react'
+import { Leaf, ArrowRight, ChevronRight, BarChart3, Shield, Zap, MapPin, MessageCircle, Sparkles } from 'lucide-react'
+
+// Animated counter hook
+function useCountUp(end: number, duration: number = 2000) {
+  const [count, setCount] = useState(0)
+  const [started, setStarted] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting) setStarted(true) },
+      { threshold: 0.3 }
+    )
+    if (ref.current) observer.observe(ref.current)
+    return () => observer.disconnect()
+  }, [])
+
+  useEffect(() => {
+    if (!started) return
+    let start = 0
+    const step = end / (duration / 16)
+    const timer = setInterval(() => {
+      start += step
+      if (start >= end) { setCount(end); clearInterval(timer) }
+      else setCount(Math.floor(start))
+    }, 16)
+    return () => clearInterval(timer)
+  }, [started, end, duration])
+
+  return { count, ref }
+}
 
 export default function LandingPage() {
+  const stat1 = useCountUp(150, 2000)
+  const stat2 = useCountUp(20, 1800)
+  const stat3 = useCountUp(10, 1500)
+  const stat4 = useCountUp(100, 2200)
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-green-50 via-blue-50 to-purple-50">
+    <div className="min-h-screen gradient-mesh">
       {/* Navigation */}
-      <nav className="bg-white/80 backdrop-blur-md border-b sticky top-0 z-50">
+      <nav className="glass-strong sticky top-0 z-50 border-b border-gray-200/50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
-            <div className="flex items-center gap-2">
-              <div className="bg-gradient-to-br from-green-500 to-green-600 p-2 rounded-xl">
-                <Leaf className="w-6 h-6 text-white" />
+            <div className="flex items-center gap-2.5">
+              <div className="bg-gradient-to-br from-green-500 to-emerald-600 p-2 rounded-xl shadow-lg shadow-green-200/50">
+                <Leaf className="w-5 h-5 text-white" />
               </div>
-              <span className="text-2xl font-bold bg-gradient-to-r from-green-600 to-blue-600 bg-clip-text text-transparent">
+              <span className="text-xl font-extrabold bg-gradient-to-r from-green-600 to-emerald-500 bg-clip-text text-transparent">
                 FarmFast
               </span>
             </div>
-            <div className="flex items-center gap-4">
-              <Link
-                href="/dashboard"
-                className="text-gray-600 hover:text-gray-900 font-medium transition-colors"
-              >
+            <div className="hidden md:flex items-center gap-6">
+              <Link href="/dashboard" className="text-sm text-gray-600 hover:text-gray-900 font-medium transition-colors">
                 Browse Listings
+              </Link>
+              <Link href="/mandi-prices" className="text-sm text-gray-600 hover:text-gray-900 font-medium transition-colors">
+                Mandi Prices
+              </Link>
+              <Link href="/analytics" className="text-sm text-gray-600 hover:text-gray-900 font-medium transition-colors">
+                Analytics
               </Link>
               <Link
                 href="/buyer/login"
-                className="px-4 py-2 text-gray-600 hover:text-gray-900 font-medium transition-colors"
+                className="text-sm text-gray-600 hover:text-gray-900 font-medium transition-colors"
               >
                 Login
               </Link>
               <Link
                 href="/buyer/register"
-                className="px-6 py-2 bg-gradient-to-r from-green-600 to-green-500 hover:from-green-700 hover:to-green-600 text-white font-semibold rounded-lg transition-all shadow-md hover:shadow-lg"
+                className="px-5 py-2 bg-gradient-to-r from-green-600 to-emerald-500 hover:from-green-700 hover:to-emerald-600 text-white text-sm font-semibold rounded-xl transition-all shadow-md shadow-green-200/50 hover:shadow-lg hover:shadow-green-300/50 hover:-translate-y-0.5"
               >
                 Get Started
               </Link>
@@ -43,116 +82,117 @@ export default function LandingPage() {
       </nav>
 
       {/* Hero Section */}
-      <section className="min-h-screen bg-gradient-to-br from-slate-50 via-green-50/30 to-white relative overflow-hidden">
-        {/* Subtle background circles */}
-        <div className="absolute top-20 right-20 w-96 h-96 bg-green-100 rounded-full blur-3xl opacity-40 pointer-events-none" />
-        <div className="absolute bottom-20 left-10 w-64 h-64 bg-emerald-100 rounded-full blur-3xl opacity-30 pointer-events-none" />
-        
-        <div className="container mx-auto px-6 pt-24 pb-16">
-          <div className="grid lg:grid-cols-2 gap-12 items-center min-h-[80vh]">
-            
-            {/* Left: Text */}
-            <div className="space-y-8">
-              <div className="inline-flex items-center gap-2 bg-green-50 border border-green-200 text-green-700 text-sm font-medium px-4 py-2 rounded-full">
-                <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-                AI-Powered Market Linkage
+      <section className="relative overflow-hidden min-h-[90vh] flex items-center">
+        {/* Animated background orbs */}
+        <div className="absolute top-10 right-[10%] w-[500px] h-[500px] bg-gradient-to-br from-green-200/40 to-emerald-100/20 rounded-full blur-3xl pointer-events-none float-card" />
+        <div className="absolute bottom-20 left-[5%] w-[300px] h-[300px] bg-gradient-to-br from-blue-200/30 to-violet-100/15 rounded-full blur-3xl pointer-events-none float-card-delayed" />
+        <div className="absolute top-[40%] left-[40%] w-[200px] h-[200px] bg-gradient-to-br from-amber-100/20 to-orange-100/10 rounded-full blur-3xl pointer-events-none float-card-slow" />
+
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 relative z-10">
+          <div className="grid lg:grid-cols-2 gap-16 items-center">
+
+            {/* Left: Text Content */}
+            <div className="space-y-8 animate-in">
+              <div className="inline-flex items-center gap-2 bg-green-50/80 border border-green-200/60 text-green-700 text-xs font-semibold px-4 py-2 rounded-full backdrop-blur-sm">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                </span>
+                AI-Powered Agricultural Marketplace
               </div>
-              
-              <h1 className="text-6xl font-black text-gray-900 leading-[1.05] tracking-tight">
-                Connect Farmers<br />
-                with{' '}
-                <span className="text-green-600">Multiple</span>{' '}
-                <span className="text-violet-600">Buyers</span><br />
-                in 1 Hour
+
+              <h1 className="text-5xl md:text-6xl lg:text-7xl font-black text-gray-900 leading-[1.05] tracking-tight">
+                Sell Your{' '}
+                <span className="gradient-text-animated">Harvest</span>
+                <br />
+                in Under{' '}
+                <span className="text-green-600">1 Hour</span>
               </h1>
-              
-              <p className="text-xl text-gray-500 leading-relaxed max-w-lg">
-                AI grades your produce in 10 seconds. 
-                15+ buyers compete for it. 
-                You get paid the same day.
+
+              <p className="text-lg md:text-xl text-gray-500 leading-relaxed max-w-lg">
+                AI grades your produce in 10 seconds. Buyers compete for your crop. You get paid the same day. All via WhatsApp.
               </p>
-              
+
               <div className="flex flex-wrap gap-4">
-                <Link href="/buyer/register" className="bg-green-600 hover:bg-green-700 text-white font-semibold px-8 py-4 rounded-xl flex items-center gap-2 transition-all hover:scale-105 shadow-lg shadow-green-200">
+                <Link href="/buyer/register" className="group bg-gradient-to-r from-green-600 to-emerald-500 hover:from-green-700 hover:to-emerald-600 text-white font-semibold px-8 py-4 rounded-2xl flex items-center gap-2 transition-all hover:-translate-y-0.5 shadow-xl shadow-green-200/40 hover:shadow-green-300/50">
                   Start as Buyer
-                  <ArrowRight className="w-5 h-5" />
+                  <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
                 </Link>
                 <a href="https://wa.me/14155238886?text=join%20habit-needed" target="_blank" rel="noopener noreferrer"
-                  className="bg-white hover:bg-gray-50 text-gray-900 font-semibold px-8 py-4 rounded-xl flex items-center gap-2 border border-gray-200 transition-all hover:scale-105 shadow-sm">
-                  <span className="text-xl">💬</span>
+                  className="group glass hover:bg-white text-gray-900 font-semibold px-8 py-4 rounded-2xl flex items-center gap-2 transition-all hover:-translate-y-0.5 shadow-sm hover:shadow-md">
+                  <span className="text-2xl">💬</span>
                   I&apos;m a Farmer
                 </a>
               </div>
-              
-              <div className="flex items-center gap-6 text-sm text-gray-500">
-                <span className="flex items-center gap-2">
-                  <svg className="w-4 h-4 text-green-500" fill="currentColor" viewBox="0 0 20 20"><path d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"/></svg>
-                  Zero fees for farmers
-                </span>
-                <span className="flex items-center gap-2">
-                  <svg className="w-4 h-4 text-green-500" fill="currentColor" viewBox="0 0 20 20"><path d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"/></svg>
-                  Same-day payment
-                </span>
-                <span className="flex items-center gap-2">
-                  <svg className="w-4 h-4 text-green-500" fill="currentColor" viewBox="0 0 20 20"><path d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"/></svg>
-                  Works on any phone
-                </span>
+
+              <div className="flex items-center gap-8 text-sm text-gray-500">
+                {['Zero fees for farmers', 'Same-day payment', 'Works on any phone'].map(item => (
+                  <span key={item} className="flex items-center gap-1.5">
+                    <svg className="w-4 h-4 text-green-500 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" /></svg>
+                    {item}
+                  </span>
+                ))}
               </div>
             </div>
-            
-            {/* Right: Floating UI preview cards */}
-            <div className="relative h-[520px] hidden lg:block">
-              
-              {/* Main listing card */}
-              <div className="absolute top-8 left-4 right-4 bg-white rounded-2xl shadow-2xl p-5 border border-gray-100">
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-xs font-medium text-gray-400 uppercase tracking-wide">New Listing</span>
-                  <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full">● Live</span>
+
+            {/* Right: Floating UI Preview */}
+            <div className="relative h-[620px] hidden lg:block">
+
+              {/* Main listing card - positioned top, constrained width */}
+              <div className="absolute top-0 left-0 w-[340px] glass-strong rounded-3xl shadow-2xl shadow-gray-200/40 p-6 gradient-border float-card">
+                <div className="flex items-center justify-between mb-4">
+                  <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">New Listing</span>
+                  <span className="flex items-center gap-1.5 text-xs bg-green-50 text-green-600 px-3 py-1 rounded-full font-semibold">
+                    <span className="relative flex h-1.5 w-1.5">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-green-500"></span>
+                    </span>
+                    Live
+                  </span>
                 </div>
                 <div className="flex gap-4">
-                  <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/8/89/Tomato_je.jpg/400px-Tomato_je.jpg" 
+                  <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/8/89/Tomato_je.jpg/400px-Tomato_je.jpg"
                     alt="Tomatoes"
-                    className="w-20 h-20 rounded-xl object-cover" />
+                    className="w-24 h-24 rounded-2xl object-cover shadow-md" />
                   <div className="flex-1">
-                    <h3 className="font-bold text-gray-900 text-lg">Tomatoes</h3>
-                    <span className="inline-block bg-amber-100 text-amber-700 text-xs font-semibold px-2 py-0.5 rounded-full mb-2">
+                    <h3 className="font-bold text-gray-900 text-xl">Tomatoes</h3>
+                    <span className="inline-flex items-center gap-1 bg-amber-50 text-amber-700 text-xs font-bold px-2.5 py-1 rounded-full mb-2 mt-1">
                       ✅ Grade B · Standard
                     </span>
                     <div className="text-sm text-gray-500 space-y-0.5">
                       <p>📦 500 kg · Pune, Maharashtra</p>
-                      <p className="text-green-600 font-semibold">₹14 – ₹16/kg</p>
+                      <p className="text-green-600 font-bold text-base">₹14 – ₹16/kg</p>
                     </div>
                   </div>
                 </div>
-                {/* Consistency bar */}
-                <div className="mt-3">
-                  <div className="flex justify-between text-xs text-gray-400 mb-1">
-                    <span>Batch Consistency</span>
-                    <span className="text-green-600 font-medium">82/100</span>
+                <div className="mt-4">
+                  <div className="flex justify-between text-xs text-gray-400 mb-1.5">
+                    <span>AI Confidence</span>
+                    <span className="text-green-600 font-bold">82%</span>
                   </div>
-                  <div className="h-1.5 bg-gray-100 rounded-full">
-                    <div className="h-1.5 bg-green-500 rounded-full" style={{width: '82%'}} />
+                  <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                    <div className="h-2 bg-gradient-to-r from-green-400 to-emerald-500 rounded-full transition-all duration-1000" style={{ width: '82%' }} />
                   </div>
                 </div>
               </div>
-              
-              {/* Floating offer card */}
-              <div className="absolute bottom-28 right-0 w-56 bg-white rounded-2xl shadow-xl p-4 border border-gray-100">
-                <p className="text-xs text-gray-400 mb-2">🎉 New Offer Received</p>
-                <p className="text-2xl font-black text-gray-900">₹16<span className="text-sm font-normal text-gray-400">/kg</span></p>
-                <p className="text-sm text-gray-500">Raj Traders · 2 hrs</p>
-                <div className="mt-3 flex gap-2">
-                  <button className="flex-1 bg-green-600 text-white text-xs font-semibold py-2 rounded-lg">Accept</button>
-                  <button className="flex-1 bg-gray-100 text-gray-600 text-xs font-semibold py-2 rounded-lg">Wait</button>
+
+              {/* Floating offer card - positioned below listing, right side */}
+              <div className="absolute top-[280px] right-4 w-52 glass-strong rounded-2xl shadow-xl shadow-blue-100/30 p-5 gradient-border float-card-delayed">
+                <p className="text-xs text-gray-400 mb-2 font-semibold">🎉 New Offer Received</p>
+                <p className="text-3xl font-black text-gray-900">₹16<span className="text-sm font-normal text-gray-400">/kg</span></p>
+                <p className="text-sm text-gray-500 mt-1">Raj Traders · 2 hrs ago</p>
+                <div className="mt-4 flex gap-2">
+                  <button className="flex-1 bg-gradient-to-r from-green-600 to-emerald-500 text-white text-xs font-bold py-2.5 rounded-xl shadow-sm">Accept</button>
+                  <button className="flex-1 bg-gray-100 text-gray-600 text-xs font-bold py-2.5 rounded-xl hover:bg-gray-200 transition-colors">Wait</button>
                 </div>
               </div>
-              
-              {/* Floating grade badge */}
-              <div className="absolute bottom-16 left-0 bg-white rounded-2xl shadow-xl p-4 border border-gray-100 flex items-center gap-3">
-                <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center text-lg">🌾</div>
+
+              {/* Floating AI grade badge - positioned bottom-left */}
+              <div className="absolute top-[340px] left-0 glass-strong rounded-2xl shadow-xl shadow-green-100/30 p-4 flex items-center gap-3 float-card-slow">
+                <div className="w-12 h-12 bg-gradient-to-br from-green-100 to-emerald-50 rounded-xl flex items-center justify-center text-xl shadow-inner">🤖</div>
                 <div>
-                  <p className="text-xs text-gray-400">AI Graded in</p>
-                  <p className="text-sm font-bold text-gray-900">8.3 seconds</p>
+                  <p className="text-xs text-gray-400 font-semibold">AI Graded in</p>
+                  <p className="text-lg font-black text-gray-900">8.3 seconds</p>
                 </div>
               </div>
             </div>
@@ -161,62 +201,79 @@ export default function LandingPage() {
       </section>
 
       {/* Features Section */}
-      <section className="py-24 bg-white">
-        <div className="container mx-auto px-6">
+      <section className="py-24 relative">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-16">
-            <h2 className="text-4xl font-black text-gray-900 mb-4">
-              Why Choose <span className="text-green-600">FarmFast</span>?
+            <div className="inline-flex items-center gap-2 bg-violet-50/80 text-violet-600 text-xs font-semibold px-4 py-2 rounded-full mb-4">
+              <Sparkles className="w-3.5 h-3.5" />
+              Why Choose Us
+            </div>
+            <h2 className="text-4xl md:text-5xl font-black text-gray-900 mb-4">
+              The <span className="text-green-600">Smartest</span> Way to Trade
             </h2>
             <p className="text-gray-500 text-lg max-w-xl mx-auto">
               Solving the ₹1.5 lakh crore post-harvest loss problem with AI and instant market access
             </p>
           </div>
-          
-          <div className="grid md:grid-cols-3 gap-6">
+
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
             {[
               {
-                icon: '🤖',
+                icon: <Sparkles className="w-6 h-6" />,
+                color: 'from-green-500 to-emerald-500',
+                bgLight: 'bg-green-50',
                 title: 'AI Quality Grading',
-                desc: 'Gemini AI analyzes 6 photos of your produce to assign an objective A/B/C grade with consistency score in under 10 seconds.',
+                desc: 'Gemini AI analyzes your produce photo to assign an objective A/B/C grade with confidence score in under 10 seconds.',
                 tag: 'Powered by Gemini'
               },
               {
-                icon: '📍',
+                icon: <MapPin className="w-6 h-6" />,
+                color: 'from-blue-500 to-indigo-500',
+                bgLight: 'bg-blue-50',
                 title: 'Location-Based Matching',
-                desc: 'Listings automatically broadcast to verified buyers within 20km. Farmers get 3+ competitive offers within 1 hour.',
+                desc: 'Listings automatically broadcast to verified buyers within 20km. Get 3+ competitive offers within 1 hour.',
                 tag: 'Geospatial'
               },
               {
-                icon: '🔒',
+                icon: <Shield className="w-6 h-6" />,
+                color: 'from-violet-500 to-purple-500',
+                bgLight: 'bg-violet-50',
                 title: 'Secure Escrow Payment',
-                desc: 'Buyer pays via UPI into escrow before pickup. Farmer receives money within 30 seconds of handover. Zero defaults.',
+                desc: 'Buyer pays via UPI into escrow before pickup. Farmer receives money within 30 seconds of handover.',
                 tag: '100% Guaranteed'
               },
               {
-                icon: '💬',
+                icon: <MessageCircle className="w-6 h-6" />,
+                color: 'from-emerald-500 to-teal-500',
+                bgLight: 'bg-emerald-50',
                 title: 'WhatsApp for Farmers',
-                desc: 'No app download. Voice-first Hindi interface. Works on 2G. Farmers with zero literacy can use it.',
+                desc: 'No app download. Hindi voice-first interface. Works on 2G networks. Zero learning curve for anyone.',
                 tag: 'Zero Learning Curve'
               },
               {
-                icon: '📊',
-                title: '6-Photo Fraud Prevention',
-                desc: 'Top, middle, bottom, best, worst, and full batch photos. Consistency score shown to buyers. Trust score per farmer.',
-                tag: 'Our Innovation'
+                icon: <BarChart3 className="w-6 h-6" />,
+                color: 'from-amber-500 to-orange-500',
+                bgLight: 'bg-amber-50',
+                title: 'Live Mandi Prices',
+                desc: 'Track real-time government mandi prices for your crop. Compare your offer with market rates instantly.',
+                tag: 'Market Intelligence'
               },
               {
-                icon: '💸',
+                icon: <Zap className="w-6 h-6" />,
+                color: 'from-rose-500 to-pink-500',
+                bgLight: 'bg-rose-50',
                 title: 'Zero Fees for Farmers',
-                desc: 'Farmers pay absolutely nothing. Buyers pay 2% commission only on successful transactions.',
+                desc: 'Farmers pay absolutely nothing. Buyers pay 2% commission only on successful transactions. Fair for everyone.',
                 tag: 'Fair Pricing'
               },
-            ].map(f => (
+            ].map((f, i) => (
               <div key={f.title}
-                className="group bg-white border border-gray-100 rounded-2xl p-6 hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
-                <div className="w-12 h-12 bg-green-50 rounded-xl flex items-center justify-center text-2xl mb-4 group-hover:bg-green-100 transition-colors">
+                className={`stagger-item group glass-strong rounded-2xl p-6 card-glow border border-gray-100/50`}
+                style={{ animationDelay: `${i * 0.08}s` }}>
+                <div className={`w-12 h-12 bg-gradient-to-br ${f.color} rounded-xl flex items-center justify-center text-white mb-4 shadow-lg group-hover:scale-110 transition-transform duration-300`}>
                   {f.icon}
                 </div>
-                <div className="inline-block bg-gray-50 text-gray-500 text-xs font-medium px-2 py-1 rounded-full mb-3">
+                <div className={`inline-block ${f.bgLight} text-gray-500 text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full mb-3`}>
                   {f.tag}
                 </div>
                 <h3 className="text-lg font-bold text-gray-900 mb-2">{f.title}</h3>
@@ -228,91 +285,75 @@ export default function LandingPage() {
       </section>
 
       {/* How It Works */}
-      <section className="py-20">
+      <section className="py-24 bg-white/50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-16">
-            <h2 className="text-4xl font-bold mb-4 text-black">How It Works</h2>
-            <p className="text-xl text-gray-600">Simple 3-step process for farmers and buyers</p>
+            <div className="inline-flex items-center gap-2 bg-blue-50/80 text-blue-600 text-xs font-semibold px-4 py-2 rounded-full mb-4">
+              <Zap className="w-3.5 h-3.5" />
+              Simple Process
+            </div>
+            <h2 className="text-4xl md:text-5xl font-black text-gray-900 mb-4">How It Works</h2>
+            <p className="text-lg text-gray-500">Simple 3-step process for everyone</p>
           </div>
 
-          <div className="grid md:grid-cols-2 gap-12">
+          <div className="grid md:grid-cols-2 gap-8">
             {/* For Farmers */}
-            <div className="bg-gradient-to-br from-green-100 to-green-50 p-8 rounded-2xl">
-              <h3 className="text-2xl font-bold mb-6 text-green-800">For Farmers</h3>
+            <div className="glass-strong rounded-3xl p-8 border border-green-100/50 card-glow">
+              <div className="flex items-center gap-3 mb-8">
+                <div className="bg-gradient-to-br from-green-500 to-emerald-600 p-2.5 rounded-xl text-white shadow-lg shadow-green-200/40">
+                  <MessageCircle className="w-5 h-5" />
+                </div>
+                <h3 className="text-2xl font-black text-gray-900">For Farmers</h3>
+                <span className="text-xs font-semibold text-green-600 bg-green-50 px-2.5 py-1 rounded-full ml-auto">Via WhatsApp</span>
+              </div>
               <div className="space-y-6">
-                <div className="flex gap-4">
-                  <div className="w-10 h-10 bg-green-600 text-white rounded-full flex items-center justify-center font-bold flex-shrink-0">
-                    1
+                {[
+                  { step: 1, title: 'Send Photo via WhatsApp', desc: 'Take a photo of your produce and send it to FarmFast WhatsApp number', emoji: '📸' },
+                  { step: 2, title: 'Get AI Quality Grade', desc: 'Receive A/B/C grade instantly. Your listing goes live to nearby buyers', emoji: '🤖' },
+                  { step: 3, title: 'Accept Best Offer & Get Paid', desc: 'Review offers, accept the best one, get paid immediately after handover', emoji: '💰' },
+                ].map(s => (
+                  <div key={s.step} className="flex gap-4 items-start">
+                    <div className="w-10 h-10 bg-gradient-to-br from-green-500 to-emerald-600 text-white rounded-xl flex items-center justify-center font-bold flex-shrink-0 text-sm shadow-lg shadow-green-200/30">
+                      {s.step}
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="font-bold text-gray-900 mb-0.5 flex items-center gap-2">
+                        {s.title} <span className="text-lg">{s.emoji}</span>
+                      </h4>
+                      <p className="text-gray-500 text-sm leading-relaxed">{s.desc}</p>
+                    </div>
                   </div>
-                  <div>
-                    <h4 className="font-semibold text-lg mb-1">Send Photo via WhatsApp</h4>
-                    <p className="text-gray-700">
-                      Take a photo of your produce and send to FarmFast WhatsApp number with quantity
-                    </p>
-                  </div>
-                </div>
-                <div className="flex gap-4">
-                  <div className="w-10 h-10 bg-green-600 text-white rounded-full flex items-center justify-center font-bold flex-shrink-0">
-                    2
-                  </div>
-                  <div>
-                    <h4 className="font-semibold text-lg mb-1">Get AI Quality Grade</h4>
-                    <p className="text-gray-700">
-                      Receive A/B/C grade instantly. Your listing is broadcast to nearby buyers
-                    </p>
-                  </div>
-                </div>
-                <div className="flex gap-4">
-                  <div className="w-10 h-10 bg-green-600 text-white rounded-full flex items-center justify-center font-bold flex-shrink-0">
-                    3
-                  </div>
-                  <div>
-                    <h4 className="font-semibold text-lg mb-1">Accept Best Offer</h4>
-                    <p className="text-gray-700">
-                      Review offers via WhatsApp, accept the best one, and get paid immediately after handover
-                    </p>
-                  </div>
-                </div>
+                ))}
               </div>
             </div>
 
             {/* For Buyers */}
-            <div className="bg-gradient-to-br from-blue-100 to-blue-50 p-8 rounded-2xl">
-              <h3 className="text-2xl font-bold mb-6 text-blue-800">For Buyers</h3>
+            <div className="glass-strong rounded-3xl p-8 border border-blue-100/50 card-glow-blue">
+              <div className="flex items-center gap-3 mb-8">
+                <div className="bg-gradient-to-br from-blue-500 to-indigo-600 p-2.5 rounded-xl text-white shadow-lg shadow-blue-200/40">
+                  <BarChart3 className="w-5 h-5" />
+                </div>
+                <h3 className="text-2xl font-black text-gray-900">For Buyers</h3>
+                <span className="text-xs font-semibold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-full ml-auto">Web Dashboard</span>
+              </div>
               <div className="space-y-6">
-                <div className="flex gap-4">
-                  <div className="w-10 h-10 bg-blue-600 text-white rounded-full flex items-center justify-center font-bold flex-shrink-0">
-                    1
+                {[
+                  { step: 1, title: 'Browse Quality-Graded Listings', desc: 'See all available produce in your area with AI-verified quality grades', emoji: '🔍' },
+                  { step: 2, title: 'Submit Competitive Offers', desc: 'Make offers based on quality grade and live mandi market prices', emoji: '📊' },
+                  { step: 3, title: 'Pick Up & Pay Securely', desc: 'If accepted, get farmer location, pick up produce, funds released via UPI', emoji: '🚚' },
+                ].map(s => (
+                  <div key={s.step} className="flex gap-4 items-start">
+                    <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 text-white rounded-xl flex items-center justify-center font-bold flex-shrink-0 text-sm shadow-lg shadow-blue-200/30">
+                      {s.step}
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="font-bold text-gray-900 mb-0.5 flex items-center gap-2">
+                        {s.title} <span className="text-lg">{s.emoji}</span>
+                      </h4>
+                      <p className="text-gray-500 text-sm leading-relaxed">{s.desc}</p>
+                    </div>
                   </div>
-                  <div>
-                    <h4 className="font-semibold text-lg mb-1">Browse Quality-Graded Listings</h4>
-                    <p className="text-gray-700">
-                      See all available produce in your area with AI-verified quality grades
-                    </p>
-                  </div>
-                </div>
-                <div className="flex gap-4">
-                  <div className="w-10 h-10 bg-blue-600 text-white rounded-full flex items-center justify-center font-bold flex-shrink-0">
-                    2
-                  </div>
-                  <div>
-                    <h4 className="font-semibold text-lg mb-1">Submit Competitive Offers</h4>
-                    <p className="text-gray-700">
-                      Make offers based on quality grade and market prices. Farmer sees all offers
-                    </p>
-                  </div>
-                </div>
-                <div className="flex gap-4">
-                  <div className="w-10 h-10 bg-blue-600 text-white rounded-full flex items-center justify-center font-bold flex-shrink-0">
-                    3
-                  </div>
-                  <div>
-                    <h4 className="font-semibold text-lg mb-1">Pick Up & Pay</h4>
-                    <p className="text-gray-700">
-                      If accepted, get farmer's location, pick up produce, and payment is released via UPI
-                    </p>
-                  </div>
-                </div>
+                ))}
               </div>
             </div>
           </div>
@@ -320,19 +361,20 @@ export default function LandingPage() {
       </section>
 
       {/* Stats Section */}
-      <section className="bg-gradient-to-r from-green-700 to-emerald-600 py-12">
-        <div className="container mx-auto px-6">
+      <section className="py-16 bg-gradient-to-r from-gray-900 via-gray-800 to-gray-900 relative overflow-hidden">
+        <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGRlZnM+PHBhdHRlcm4gaWQ9ImdyaWQiIHdpZHRoPSI2MCIgaGVpZ2h0PSI2MCIgcGF0dGVyblVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+PHBhdGggZD0iTSA2MCAwIEwgMCAwIDAgNjAiIGZpbGw9Im5vbmUiIHN0cm9rZT0icmdiYSgyNTUsMjU1LDI1NSwwLjAzKSIgc3Ryb2tlLXdpZHRoPSIxIi8+PC9wYXR0ZXJuPjwvZGVmcz48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSJ1cmwoI2dyaWQpIi8+PC9zdmc+')] opacity-50" />
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
             {[
-              { value: '₹1.5L Cr', label: 'Annual Post-Harvest Loss', icon: '📉' },
-              { value: '15-20%', label: 'Higher Farmer Income', icon: '📈' },
-              { value: '<1 Hour', label: 'Time to First Offer', icon: '⚡' },
-              { value: '100%', label: 'Payment Guarantee', icon: '🔒' },
+              { ref: stat1.ref, value: `₹${stat1.count}L Cr`, label: 'Post-Harvest Loss Solved', icon: '📉' },
+              { ref: stat2.ref, value: `${stat2.count}%`, label: 'Higher Farmer Income', icon: '📈' },
+              { ref: stat3.ref, value: `<${stat3.count}s`, label: 'AI Grading Speed', icon: '⚡' },
+              { ref: stat4.ref, value: `${stat4.count}%`, label: 'Payment Guarantee', icon: '🔒' },
             ].map(stat => (
-              <div key={stat.label} className="text-center text-white">
-                <div className="text-3xl mb-1">{stat.icon}</div>
-                <div className="text-4xl font-black mb-1">{stat.value}</div>
-                <div className="text-green-100 text-sm">{stat.label}</div>
+              <div key={stat.label} ref={stat.ref} className="text-center">
+                <div className="text-3xl mb-2">{stat.icon}</div>
+                <div className="text-4xl md:text-5xl font-black text-white mb-1">{stat.value}</div>
+                <div className="text-gray-400 text-sm font-medium">{stat.label}</div>
               </div>
             ))}
           </div>
@@ -340,76 +382,85 @@ export default function LandingPage() {
       </section>
 
       {/* CTA Section */}
-      <section className="py-20">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <h2 className="text-4xl font-bold mb-6 text-black">
-            Ready to Transform Agricultural Trade?
-          </h2>
-          <p className="text-xl text-gray-600 mb-8">
-            Join thousands of farmers and buyers using FarmFast for fair, transparent, and instant transactions
-          </p>
-          <div className="flex flex-wrap justify-center gap-4">
-            <Link
-              href="/buyer/register"
-              className="px-8 py-4 bg-gradient-to-r from-green-600 to-green-500 hover:from-green-700 hover:to-green-600 text-white font-bold rounded-xl transition-all shadow-lg hover:shadow-xl text-lg"
-            >
-              Register as Buyer
-            </Link>
-            <Link
-              href="/dashboard"
-              className="px-8 py-4 bg-white hover:bg-gray-50 text-gray-900 font-bold rounded-xl transition-all shadow-md hover:shadow-lg text-lg border-2 border-gray-200"
-            >
-              Explore Listings
-            </Link>
+      <section className="py-24 relative">
+        <div className="absolute inset-0 gradient-mesh" />
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center relative z-10">
+          <div className="glass-strong rounded-3xl p-12 md:p-16 shadow-2xl shadow-gray-200/30 border border-gray-100/50">
+            <div className="inline-flex items-center gap-2 bg-green-50/80 text-green-600 text-xs font-semibold px-4 py-2 rounded-full mb-6">
+              <Sparkles className="w-3.5 h-3.5" />
+              Join the Revolution
+            </div>
+            <h2 className="text-4xl md:text-5xl font-black text-gray-900 mb-6">
+              Ready to Transform<br />Agricultural Trade?
+            </h2>
+            <p className="text-lg text-gray-500 mb-10 max-w-lg mx-auto">
+              Join thousands of farmers and buyers using FarmFast for fair, transparent, and instant transactions
+            </p>
+            <div className="flex flex-wrap justify-center gap-4">
+              <Link
+                href="/buyer/register"
+                className="group px-8 py-4 bg-gradient-to-r from-green-600 to-emerald-500 hover:from-green-700 hover:to-emerald-600 text-white font-bold rounded-2xl transition-all shadow-xl shadow-green-200/40 hover:shadow-green-300/50 hover:-translate-y-0.5 text-lg flex items-center gap-2"
+              >
+                Register as Buyer
+                <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+              </Link>
+              <Link
+                href="/dashboard"
+                className="group px-8 py-4 glass hover:bg-white text-gray-900 font-bold rounded-2xl transition-all shadow-sm hover:shadow-md hover:-translate-y-0.5 text-lg flex items-center gap-2 border border-gray-200/60"
+              >
+                Explore Listings
+                <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+              </Link>
+            </div>
           </div>
         </div>
       </section>
 
       {/* Footer */}
-      <footer className="bg-gray-900 text-white py-12">
+      <footer className="bg-gray-900 text-white pt-16 pb-8">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid md:grid-cols-4 gap-8">
+          <div className="grid md:grid-cols-4 gap-10 mb-12">
             <div>
-              <div className="flex items-center gap-2 mb-4">
-                <div className="bg-gradient-to-br from-green-500 to-green-600 p-2 rounded-xl">
-                  <Leaf className="w-5 h-5 text-white" />
+              <div className="flex items-center gap-2.5 mb-4">
+                <div className="bg-gradient-to-br from-green-500 to-emerald-600 p-2 rounded-xl">
+                  <Leaf className="w-4 h-4 text-white" />
                 </div>
-                <span className="text-xl font-bold">FarmFast</span>
+                <span className="text-lg font-extrabold">FarmFast</span>
               </div>
-              <p className="text-gray-400">
-                AI-powered market linkage platform connecting farmers with buyers
+              <p className="text-gray-400 text-sm leading-relaxed">
+                AI-powered agricultural marketplace connecting farmers directly with buyers for fair, transparent trade.
               </p>
             </div>
             <div>
-              <h4 className="font-semibold mb-4">For Farmers</h4>
-              <ul className="space-y-2 text-gray-400">
-                <li>How It Works</li>
-                <li>WhatsApp Guide</li>
-                <li>Pricing</li>
-                <li>FAQs</li>
+              <h4 className="font-bold text-sm uppercase tracking-wider text-gray-300 mb-4">For Farmers</h4>
+              <ul className="space-y-2.5 text-gray-400 text-sm">
+                <li className="hover:text-white transition-colors cursor-pointer">How It Works</li>
+                <li className="hover:text-white transition-colors cursor-pointer">WhatsApp Guide</li>
+                <li className="hover:text-white transition-colors cursor-pointer">Pricing</li>
+                <li className="hover:text-white transition-colors cursor-pointer">FAQs</li>
               </ul>
             </div>
             <div>
-              <h4 className="font-semibold mb-4">For Buyers</h4>
-              <ul className="space-y-2 text-gray-400">
-                <li>Register</li>
-                <li>Browse Listings</li>
-                <li>Quality Grades</li>
-                <li>Payment Terms</li>
+              <h4 className="font-bold text-sm uppercase tracking-wider text-gray-300 mb-4">For Buyers</h4>
+              <ul className="space-y-2.5 text-gray-400 text-sm">
+                <li><Link href="/buyer/register" className="hover:text-white transition-colors">Register</Link></li>
+                <li><Link href="/dashboard" className="hover:text-white transition-colors">Browse Listings</Link></li>
+                <li><Link href="/mandi-prices" className="hover:text-white transition-colors">Mandi Prices</Link></li>
+                <li><Link href="/analytics" className="hover:text-white transition-colors">Analytics</Link></li>
               </ul>
             </div>
             <div>
-              <h4 className="font-semibold mb-4">Company</h4>
-              <ul className="space-y-2 text-gray-400">
-                <li>About Us</li>
-                <li>Contact</li>
-                <li>Privacy Policy</li>
-                <li>Terms of Service</li>
+              <h4 className="font-bold text-sm uppercase tracking-wider text-gray-300 mb-4">Company</h4>
+              <ul className="space-y-2.5 text-gray-400 text-sm">
+                <li className="hover:text-white transition-colors cursor-pointer">About Us</li>
+                <li className="hover:text-white transition-colors cursor-pointer">Contact</li>
+                <li className="hover:text-white transition-colors cursor-pointer">Privacy Policy</li>
+                <li className="hover:text-white transition-colors cursor-pointer">Terms of Service</li>
               </ul>
             </div>
           </div>
-          <div className="border-t border-gray-800 mt-8 pt-8 text-center text-gray-400">
-            <p>© 2026 FarmFast. Built with ❤️ for Indian farmers.</p>
+          <div className="border-t border-gray-800 pt-8 text-center">
+            <p className="text-gray-500 text-sm">© 2026 FarmFast. Built with ❤️ for Indian farmers.</p>
           </div>
         </div>
       </footer>
