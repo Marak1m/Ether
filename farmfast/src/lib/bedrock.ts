@@ -8,6 +8,12 @@ const bedrockClient = new BedrockRuntimeClient({
     },
 })
 
+// ─── Models ────────────────────────────────────────────────────
+// Sonnet  → vision + accurate grading (used for image analysis)
+// Haiku   → fast text responses (used for chat/Hindi responses)
+const SONNET_MODEL = "anthropic.claude-3-5-sonnet-20241022-v2:0"
+const HAIKU_MODEL = "anthropic.claude-3-haiku-20240307-v1:0"
+
 export interface QualityGradeResult {
     crop_type: string
     grade: 'A' | 'B' | 'C'
@@ -23,6 +29,10 @@ export interface QualityGradeResult {
     hindi_summary: string
 }
 
+/**
+ * Grade a produce image using Claude 3.5 Sonnet (vision model).
+ * Returns structured quality assessment with crop type, grade, price range, etc.
+ */
 export async function gradeProduceImage(
     imageBase64: string
 ): Promise<QualityGradeResult> {
@@ -78,7 +88,7 @@ Be realistic and honest. Most produce is Grade B. Only exceptional produce is Gr
         }
 
         const command = new InvokeModelCommand({
-            modelId: "anthropic.claude-3-haiku-20240307-v1:0",
+            modelId: SONNET_MODEL,
             contentType: "application/json",
             accept: "application/json",
             body: JSON.stringify(requestBody),
@@ -101,7 +111,48 @@ Be realistic and honest. Most produce is Grade B. Only exceptional produce is Gr
 
         return gradeResult
     } catch (error) {
-        console.error('AWS Bedrock API error:', error)
+        console.error('AWS Bedrock Sonnet API error:', error)
         throw new Error('Failed to grade produce image')
+    }
+}
+
+/**
+ * Generate a Hindi chat response using Claude 3 Haiku (fast, text-only).
+ * Used for conversational WhatsApp messages that don't need vision.
+ */
+export async function generateChatResponse(
+    prompt: string
+): Promise<string> {
+    try {
+        const requestBody = {
+            anthropic_version: "bedrock-2023-05-31",
+            max_tokens: 512,
+            messages: [
+                {
+                    role: "user",
+                    content: [
+                        {
+                            type: "text",
+                            text: prompt,
+                        },
+                    ],
+                },
+            ],
+        }
+
+        const command = new InvokeModelCommand({
+            modelId: HAIKU_MODEL,
+            contentType: "application/json",
+            accept: "application/json",
+            body: JSON.stringify(requestBody),
+        })
+
+        const response = await bedrockClient.send(command)
+        const responseBody = JSON.parse(new TextDecoder().decode(response.body))
+
+        return responseBody.content[0].text
+    } catch (error) {
+        console.error('AWS Bedrock Haiku API error:', error)
+        throw new Error('Failed to generate chat response')
     }
 }

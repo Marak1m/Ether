@@ -1,6 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { calculateDistance } from '@/lib/utils'
+import { resolveImageUrl } from '@/lib/s3'
+
+// Resolve S3 keys to pre-signed URLs for all listings
+async function resolveListingImages(listings: any[]): Promise<any[]> {
+  return Promise.all(
+    listings.map(async (listing) => {
+      if (listing.image_url && !listing.image_url.startsWith('http')) {
+        try {
+          listing.image_url = await resolveImageUrl(listing.image_url)
+        } catch {
+          // Keep original value if resolution fails
+        }
+      }
+      return listing
+    })
+  )
+}
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
@@ -30,7 +47,7 @@ export async function GET(req: NextRequest) {
   if (buyerLat && buyerLon && data) {
     const lat = parseFloat(buyerLat)
     const lon = parseFloat(buyerLon)
-    
+
     const filteredData = data
       .map(listing => {
         if (listing.latitude && listing.longitude) {
@@ -42,8 +59,10 @@ export async function GET(req: NextRequest) {
       .filter(listing => listing.distance === null || listing.distance <= radius)
       .sort((a, b) => (a.distance || 999) - (b.distance || 999))
 
-    return NextResponse.json(filteredData)
+    const resolved = await resolveListingImages(filteredData)
+    return NextResponse.json(resolved)
   }
 
-  return NextResponse.json(data)
+  const resolved = await resolveListingImages(data || [])
+  return NextResponse.json(resolved)
 }
