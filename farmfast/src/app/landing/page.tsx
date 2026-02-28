@@ -176,23 +176,24 @@ export default function LandingPage() {
                 </div>
               </div>
 
-              {/* Floating offer card - positioned below listing, right side */}
-              <div className="absolute top-[280px] right-4 w-52 glass-strong rounded-2xl shadow-xl shadow-blue-100/30 p-5 gradient-border float-card-delayed">
-                <p className="text-xs text-gray-400 mb-2 font-semibold">🎉 New Offer Received</p>
-                <p className="text-3xl font-black text-gray-900">₹16<span className="text-sm font-normal text-gray-400">/kg</span></p>
-                <p className="text-sm text-gray-500 mt-1">Raj Traders · 2 hrs ago</p>
-                <div className="mt-4 flex gap-2">
-                  <button className="flex-1 bg-gradient-to-r from-green-600 to-emerald-500 text-white text-xs font-bold py-2.5 rounded-xl shadow-sm">Accept</button>
-                  <button className="flex-1 bg-gray-100 text-gray-600 text-xs font-bold py-2.5 rounded-xl hover:bg-gray-200 transition-colors">Wait</button>
+              {/* Bottom row: AI badge (left) + Offer card (right) side by side */}
+              <div className="absolute top-[290px] left-0 right-0 flex items-start gap-4">
+                <div className="glass-strong rounded-2xl shadow-xl shadow-green-100/30 p-4 flex items-center gap-3 float-card-slow">
+                  <div className="w-12 h-12 bg-gradient-to-br from-green-100 to-emerald-50 rounded-xl flex items-center justify-center text-xl shadow-inner">🤖</div>
+                  <div>
+                    <p className="text-xs text-gray-400 font-semibold">AI Graded in</p>
+                    <p className="text-lg font-black text-gray-900">8.3 seconds</p>
+                  </div>
                 </div>
-              </div>
 
-              {/* Floating AI grade badge - positioned bottom-left */}
-              <div className="absolute top-[340px] left-0 glass-strong rounded-2xl shadow-xl shadow-green-100/30 p-4 flex items-center gap-3 float-card-slow">
-                <div className="w-12 h-12 bg-gradient-to-br from-green-100 to-emerald-50 rounded-xl flex items-center justify-center text-xl shadow-inner">🤖</div>
-                <div>
-                  <p className="text-xs text-gray-400 font-semibold">AI Graded in</p>
-                  <p className="text-lg font-black text-gray-900">8.3 seconds</p>
+                <div className="flex-1 glass-strong rounded-2xl shadow-xl shadow-blue-100/30 p-5 gradient-border float-card-delayed">
+                  <p className="text-xs text-gray-400 mb-2 font-semibold">🎉 New Offer Received</p>
+                  <p className="text-3xl font-black text-gray-900">₹16<span className="text-sm font-normal text-gray-400">/kg</span></p>
+                  <p className="text-sm text-gray-500 mt-1">Raj Traders · 2 hrs ago</p>
+                  <div className="mt-3 flex gap-2">
+                    <button className="flex-1 bg-gradient-to-r from-green-600 to-emerald-500 text-white text-xs font-bold py-2.5 rounded-xl shadow-sm">Accept</button>
+                    <button className="flex-1 bg-gray-100 text-gray-600 text-xs font-bold py-2.5 rounded-xl hover:bg-gray-200 transition-colors">Wait</button>
+                  </div>
                 </div>
               </div>
             </div>
