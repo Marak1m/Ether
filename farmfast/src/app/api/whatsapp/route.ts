@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
-import { gradeProduceImage } from '@/lib/gemini'
+import { gradeProduceImage } from '@/lib/bedrock'
+import { uploadProduceImage } from '@/lib/s3'
 import { sendWhatsAppMessage, formatPhoneNumber } from '@/lib/twilio'
 import { getCoordinatesFromPincode } from '@/lib/geocoding'
 import axios from 'axios'
@@ -293,7 +294,17 @@ export async function POST(req: NextRequest) {
         })
         const imageBase64 = Buffer.from(imageResponse.data).toString('base64')
 
-        // Grade with Gemini
+        // Upload image to S3 for permanent storage
+        let imageUrl = mediaUrl
+        try {
+          const imageBuffer = Buffer.from(imageResponse.data)
+          imageUrl = await uploadProduceImage(imageBuffer, from)
+          console.log(`Image uploaded to S3: ${imageUrl}`)
+        } catch (s3Error) {
+          console.error('S3 upload failed, using Twilio URL as fallback:', s3Error)
+        }
+
+        // Grade with AWS Bedrock (Claude)
         const gradeResult = await gradeProduceImage(imageBase64)
 
         // Save listing to database
@@ -313,7 +324,7 @@ export async function POST(req: NextRequest) {
             price_range_min: gradeResult.price_range_min,
             price_range_max: gradeResult.price_range_max,
             shelf_life_days: gradeResult.shelf_life_days,
-            image_url: mediaUrl,
+            image_url: imageUrl,
             hindi_summary: gradeResult.hindi_summary,
             confidence_score: gradeResult.confidence,
             quality_factors: gradeResult.quality_factors,
