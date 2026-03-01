@@ -95,7 +95,7 @@ export default function Home() {
     try {
       let url = `/api/listings?status=active`
       if (gradeFilter !== 'all') url += `&grade=${gradeFilter}`
-      if (buyerLocation) {
+      if (buyerLocation && radius > 0) {
         url += `&lat=${buyerLocation.lat}&lon=${buyerLocation.lon}&radius=${radius}`
       }
 
@@ -237,8 +237,8 @@ export default function Home() {
             <button
               onClick={() => setViewMode('list')}
               className={`px-3 py-2 rounded-lg text-xs font-semibold transition-all ${viewMode === 'list'
-                  ? 'bg-white text-gray-900 shadow-sm'
-                  : 'text-gray-500 hover:text-gray-900'
+                ? 'bg-white text-gray-900 shadow-sm'
+                : 'text-gray-500 hover:text-gray-900'
                 }`}
             >
               <List className="w-3.5 h-3.5 inline mr-1" />
@@ -247,8 +247,8 @@ export default function Home() {
             <button
               onClick={() => setViewMode('map')}
               className={`px-3 py-2 rounded-lg text-xs font-semibold transition-all ${viewMode === 'map'
-                  ? 'bg-white text-gray-900 shadow-sm'
-                  : 'text-gray-500 hover:text-gray-900'
+                ? 'bg-white text-gray-900 shadow-sm'
+                : 'text-gray-500 hover:text-gray-900'
                 }`}
             >
               <Map className="w-3.5 h-3.5 inline mr-1" />
@@ -263,11 +263,11 @@ export default function Home() {
                 key={grade}
                 onClick={() => setGradeFilter(grade)}
                 className={`px-3.5 py-2 rounded-xl text-xs font-semibold transition-all ${gradeFilter === grade
-                    ? grade === 'A' ? 'bg-green-100 text-green-700 shadow-sm'
-                      : grade === 'B' ? 'bg-amber-100 text-amber-700 shadow-sm'
-                        : grade === 'C' ? 'bg-red-100 text-red-700 shadow-sm'
-                          : 'bg-gray-900 text-white shadow-sm'
-                    : 'bg-gray-100/80 text-gray-500 hover:bg-gray-200/80'
+                  ? grade === 'A' ? 'bg-green-100 text-green-700 shadow-sm'
+                    : grade === 'B' ? 'bg-amber-100 text-amber-700 shadow-sm'
+                      : grade === 'C' ? 'bg-red-100 text-red-700 shadow-sm'
+                        : 'bg-gray-900 text-white shadow-sm'
+                  : 'bg-gray-100/80 text-gray-500 hover:bg-gray-200/80'
                   }`}
               >
                 {grade === 'all' ? 'All Grades' : `Grade ${grade}`}
@@ -300,6 +300,9 @@ export default function Home() {
             <option value="15">Within 15 km</option>
             <option value="20">Within 20 km</option>
             <option value="50">Within 50 km</option>
+            <option value="100">Within 100 km</option>
+            <option value="200">Within 200 km</option>
+            <option value="0">All India</option>
           </select>
         </div>
 
@@ -307,7 +310,7 @@ export default function Home() {
         <div>
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-bold text-gray-900">
-              Available Produce {buyerLocation && <span className="text-gray-400 font-normal text-sm">({radius}km radius)</span>}
+              Available Produce {buyerLocation && <span className="text-gray-400 font-normal text-sm">({radius > 0 ? `${radius}km radius` : 'All India'})</span>}
             </h2>
             <span className="text-xs text-gray-400 font-medium">{filteredListings.length} results</span>
           </div>

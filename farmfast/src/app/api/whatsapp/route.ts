@@ -645,7 +645,7 @@ export async function POST(req: NextRequest) {
 
       const newAddress = body.replace(/.*?(बदलो|बदल|change)\s*/i, '').trim()
 
-      if (!newAddress || newAddress.length < 10) {
+      if (!newAddress || newAddress.length < 5) {
         await sendWhatsAppMessage(from, '❌ कृपया पूरा पता बताएं।\n\nउदाहरण: पता बदलो गाँव खेड़ा, पुणे, महाराष्ट्र')
         return NextResponse.json({ success: true })
       }
