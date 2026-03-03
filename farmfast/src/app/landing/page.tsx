@@ -224,8 +224,8 @@ export default function LandingPage() {
                 color: 'from-green-500 to-emerald-500',
                 bgLight: 'bg-green-50',
                 title: 'AI Quality Grading',
-                desc: 'Gemini AI analyzes your produce photo to assign an objective A/B/C grade with confidence score in under 10 seconds.',
-                tag: 'Powered by Gemini'
+                desc: 'Amazon Nova (via Amazon Bedrock) analyzes your produce photo to assign an objective A/B/C grade with confidence score in under 10 seconds.',
+                tag: 'Powered by Amazon Bedrock'
               },
               {
                 icon: <MapPin className="w-6 h-6" />,
