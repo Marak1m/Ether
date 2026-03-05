@@ -1,15 +1,10 @@
-import {
-  BedrockRuntimeClient,
-  InvokeModelCommand
-} from "@aws-sdk/client-bedrock-runtime"
+// Amazon Bedrock — Nova Lite (image grading) + Nova Micro (Hindi chat)
+// Uses Bedrock API Key (Bearer token) for authentication
 
-const client = new BedrockRuntimeClient({
-  region: process.env.AWS_REGION || "us-east-1",
-  credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
-  }
-})
+const BEDROCK_API_KEY = process.env.BEDROCK_API_KEY || ''
+const AWS_REGION = process.env.AWS_REGION || 'us-east-1'
+
+const BEDROCK_ENDPOINT = `https://bedrock-runtime.${AWS_REGION}.amazonaws.com`
 
 export interface QualityGradeResult {
   crop_type: string
@@ -40,7 +35,7 @@ export async function gradeProduceImage(
             image: {
               format: "jpeg",
               source: {
-                bytes: imageBase64  // Nova uses bytes directly
+                bytes: imageBase64
               }
             }
           },
@@ -72,15 +67,26 @@ Grade A: <10% defects. Grade B: 10-30% defects. Grade C: >30% defects.`
     }
   }
 
-  const command = new InvokeModelCommand({
-    modelId: "amazon.nova-lite-v1:0",
-    contentType: "application/json",
-    accept: "application/json",
-    body: JSON.stringify(payload)
-  })
+  const response = await fetch(
+    `${BEDROCK_ENDPOINT}/model/amazon.nova-lite-v1:0/invoke`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Authorization': `Bearer ${BEDROCK_API_KEY}`
+      },
+      body: JSON.stringify(payload)
+    }
+  )
 
-  const response = await client.send(command)
-  const body = JSON.parse(new TextDecoder().decode(response.body))
+  if (!response.ok) {
+    const errorText = await response.text()
+    console.error(`Bedrock Nova Lite error (${response.status}):`, errorText)
+    throw new Error(`Bedrock API error: ${response.status} — ${errorText}`)
+  }
+
+  const body = await response.json()
   const text = body.output.message.content[0].text
     .replace(/```json\n?/g, '')
     .replace(/```\n?/g, '')
@@ -114,14 +120,25 @@ Reply in Hindi in 1-2 friendly sentences.`
     }
   }
 
-  const command = new InvokeModelCommand({
-    modelId: "amazon.nova-micro-v1:0",
-    contentType: "application/json",
-    accept: "application/json",
-    body: JSON.stringify(payload)
-  })
+  const response = await fetch(
+    `${BEDROCK_ENDPOINT}/model/amazon.nova-micro-v1:0/invoke`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Authorization': `Bearer ${BEDROCK_API_KEY}`
+      },
+      body: JSON.stringify(payload)
+    }
+  )
 
-  const response = await client.send(command)
-  const body = JSON.parse(new TextDecoder().decode(response.body))
+  if (!response.ok) {
+    const errorText = await response.text()
+    console.error(`Bedrock Nova Micro error (${response.status}):`, errorText)
+    throw new Error(`Bedrock API error: ${response.status} — ${errorText}`)
+  }
+
+  const body = await response.json()
   return body.output.message.content[0].text
 }
