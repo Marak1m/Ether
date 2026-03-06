@@ -1,12 +1,13 @@
 'use client'
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { Listing } from '@/lib/supabase'
 import { QualityBadge } from './QualityBadge'
 import { RatingStars } from './RatingStars'
 import { formatTime, formatCurrency } from '@/lib/utils'
-import { MapPin, Package, Clock, TrendingUp, Navigation } from 'lucide-react'
+import { MapPin, Package, Clock, TrendingUp, Navigation, Lock } from 'lucide-react'
 import { OfferModal } from './OfferModal'
 import { getCurrentUser } from '@/lib/auth'
 
@@ -14,11 +15,23 @@ interface ListingCardProps {
   listing: Listing & { distance?: number | null }
 }
 
+function formatCountdown(ms: number): string {
+  if (ms <= 0) return '0:00'
+  const totalSec = Math.floor(ms / 1000)
+  const h = Math.floor(totalSec / 3600)
+  const m = Math.floor((totalSec % 3600) / 60)
+  const s = totalSec % 60
+  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+  return `${m}:${String(s).padStart(2, '0')}`
+}
+
 export function ListingCard({ listing }: ListingCardProps) {
   const router = useRouter()
   const [showOfferModal, setShowOfferModal] = useState(false)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [checkingAuth, setCheckingAuth] = useState(true)
+  const [timeLeft, setTimeLeft] = useState<number>(0)
+  const [auctionStatus, setAuctionStatus] = useState(listing.auction_status)
 
   useEffect(() => {
     checkAuth()
@@ -28,12 +41,51 @@ export function ListingCard({ listing }: ListingCardProps) {
     try {
       const user = await getCurrentUser()
       setIsAuthenticated(!!user)
-    } catch (error) {
+    } catch {
       setIsAuthenticated(false)
     } finally {
       setCheckingAuth(false)
     }
   }
+
+  // Countdown timer + auto-close polling
+  const closeAuction = useCallback(async () => {
+    try {
+      await fetch(`/api/listings/${listing.id}/close-auction`, { method: 'POST' })
+      setAuctionStatus('closed')
+    } catch (err) {
+      console.error('close-auction error:', err)
+    }
+  }, [listing.id])
+
+  useEffect(() => {
+    if (!listing.auction_closes_at || auctionStatus !== 'open') return
+
+    const closesAt = new Date(listing.auction_closes_at).getTime()
+
+    const tick = () => {
+      const remaining = closesAt - Date.now()
+      setTimeLeft(Math.max(0, remaining))
+      if (remaining <= 0 && auctionStatus === 'open') {
+        closeAuction()
+      }
+    }
+
+    tick()
+    const timer = setInterval(tick, 1000)
+    return () => clearInterval(timer)
+  }, [listing.auction_closes_at, auctionStatus, closeAuction])
+
+  // Poll every 30s to close auction if past deadline
+  useEffect(() => {
+    if (!listing.auction_closes_at || auctionStatus !== 'open') return
+    const poll = setInterval(async () => {
+      if (Date.now() > new Date(listing.auction_closes_at!).getTime() && auctionStatus === 'open') {
+        await closeAuction()
+      }
+    }, 30000)
+    return () => clearInterval(poll)
+  }, [listing.auction_closes_at, auctionStatus, closeAuction])
 
   const handleOfferClick = () => {
     if (!isAuthenticated) {
@@ -49,6 +101,11 @@ export function ListingCard({ listing }: ListingCardProps) {
     'Wheat': '🌾', 'Rice': '🍚', 'Apple': '🍎',
   }
   const emoji = cropEmojis[listing.crop_type] || '🌾'
+
+  const auctionIsOpen = auctionStatus === 'open'
+  const auctionIsClosed = auctionStatus === 'closed'
+  const auctionIsAccepted = auctionStatus === 'accepted'
+  const offerCount = listing.offer_count ?? 0
 
   return (
     <>
@@ -119,7 +176,7 @@ export function ListingCard({ listing }: ListingCardProps) {
             </div>
 
             {/* Price + Confidence */}
-            <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center justify-between mb-1">
               <div className="flex items-center gap-1.5">
                 <TrendingUp className="w-3.5 h-3.5 text-green-500" />
                 <span className="font-bold text-green-600 text-sm">
@@ -131,14 +188,57 @@ export function ListingCard({ listing }: ListingCardProps) {
               </span>
             </div>
 
-            {/* Action button */}
-            <button
-              onClick={handleOfferClick}
-              disabled={checkingAuth}
-              className="w-full bg-gradient-to-r from-green-600 to-emerald-500 hover:from-green-700 hover:to-emerald-600 disabled:from-gray-300 disabled:to-gray-300 text-white font-semibold py-2.5 px-4 rounded-xl transition-all duration-200 shadow-md shadow-green-100/50 hover:shadow-lg hover:shadow-green-200/50 hover:-translate-y-0.5 text-sm"
-            >
-              {checkingAuth ? 'Loading...' : isAuthenticated ? '💼 Submit Offer' : '🔑 Login to Offer'}
-            </button>
+            {/* Mandi + Reserve price context */}
+            {listing.mandi_modal_price != null && (
+              <p className="text-xs text-gray-400 mb-0.5">
+                Mandi today: ₹{listing.mandi_modal_price}/kg
+              </p>
+            )}
+            {listing.reserve_price != null && (
+              <p className="text-xs text-orange-500 flex items-center gap-1 mb-2">
+                <Lock className="w-3 h-3 flex-shrink-0" />
+                Minimum: ₹{listing.reserve_price}/kg
+              </p>
+            )}
+
+            {/* Auction state */}
+            {auctionIsAccepted ? (
+              <div className="inline-flex items-center gap-1.5 bg-green-100 text-green-700 text-xs font-semibold px-3 py-1.5 rounded-full">
+                ✅ Sold
+              </div>
+            ) : auctionIsClosed ? (
+              <div className="inline-flex items-center gap-1.5 bg-amber-100 text-amber-700 text-xs font-semibold px-3 py-1.5 rounded-full">
+                ⏰ Auction closed — awaiting decision
+              </div>
+            ) : auctionIsOpen ? (
+              <div className="mb-2">
+                <div className="flex items-center justify-between text-xs mb-1.5">
+                  <span className="text-red-500 font-mono font-bold">
+                    ⏱ {formatCountdown(timeLeft)} left
+                  </span>
+                  <span className="text-gray-500">
+                    {offerCount} offer{offerCount !== 1 ? 's' : ''} submitted
+                  </span>
+                </div>
+                {/* Action button — only shown when auction is open */}
+                <button
+                  onClick={handleOfferClick}
+                  disabled={checkingAuth}
+                  className="w-full bg-gradient-to-r from-green-600 to-emerald-500 hover:from-green-700 hover:to-emerald-600 disabled:from-gray-300 disabled:to-gray-300 text-white font-semibold py-2.5 px-4 rounded-xl transition-all duration-200 shadow-md shadow-green-100/50 hover:shadow-lg hover:shadow-green-200/50 hover:-translate-y-0.5 text-sm"
+                >
+                  {checkingAuth ? 'Loading...' : isAuthenticated ? '💼 Submit Offer' : '🔑 Login to Offer'}
+                </button>
+              </div>
+            ) : (
+              /* No auction fields — legacy listing */
+              <button
+                onClick={handleOfferClick}
+                disabled={checkingAuth}
+                className="w-full bg-gradient-to-r from-green-600 to-emerald-500 hover:from-green-700 hover:to-emerald-600 disabled:from-gray-300 disabled:to-gray-300 text-white font-semibold py-2.5 px-4 rounded-xl transition-all duration-200 shadow-md shadow-green-100/50 hover:shadow-lg hover:shadow-green-200/50 hover:-translate-y-0.5 text-sm"
+              >
+                {checkingAuth ? 'Loading...' : isAuthenticated ? '💼 Submit Offer' : '🔑 Login to Offer'}
+              </button>
+            )}
           </div>
         </div>
       </div>

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { calculateDistance } from '@/lib/utils'
@@ -15,6 +16,23 @@ async function resolveListingImages(listings: any[]): Promise<any[]> {
         }
       }
       return listing
+    })
+  )
+}
+
+// Attach offer_count to each listing
+async function attachOfferCounts(listings: any[]): Promise<any[]> {
+  return Promise.all(
+    listings.map(async (listing) => {
+      try {
+        const { count } = await supabase
+          .from('offers')
+          .select('*', { count: 'exact', head: true })
+          .eq('listing_id', listing.id)
+        return { ...listing, offer_count: count ?? 0 }
+      } catch {
+        return { ...listing, offer_count: 0 }
+      }
     })
   )
 }
@@ -44,11 +62,12 @@ export async function GET(req: NextRequest) {
   }
 
   // Filter by radius if buyer location provided
-  if (buyerLat && buyerLon && data) {
+  let results = data || []
+  if (buyerLat && buyerLon && results.length > 0) {
     const lat = parseFloat(buyerLat)
     const lon = parseFloat(buyerLon)
 
-    const filteredData = data
+    results = results
       .map(listing => {
         if (listing.latitude && listing.longitude) {
           const distance = calculateDistance(lat, lon, listing.latitude, listing.longitude)
@@ -57,12 +76,10 @@ export async function GET(req: NextRequest) {
         return { ...listing, distance: null }
       })
       .filter(listing => listing.distance === null || listing.distance <= radius)
-      .sort((a, b) => (a.distance || 999) - (b.distance || 999))
-
-    const resolved = await resolveListingImages(filteredData)
-    return NextResponse.json(resolved)
+      .sort((a: any, b: any) => (a.distance || 999) - (b.distance || 999))
   }
 
-  const resolved = await resolveListingImages(data || [])
+  const withOfferCounts = await attachOfferCounts(results)
+  const resolved = await resolveListingImages(withOfferCounts)
   return NextResponse.json(resolved)
 }
