@@ -30,6 +30,13 @@ export type Listing = {
   }
   status: 'active' | 'sold' | 'expired'
   created_at: string
+  // Auction fields (added via SQL migration)
+  reserve_price: number | null
+  mandi_modal_price: number | null
+  auction_closes_at: string | null
+  auction_status: 'open' | 'closed' | 'accepted' | null
+  // Computed at query time (not a DB column)
+  offer_count?: number
 }
 
 export type Buyer = {
@@ -56,4 +63,7 @@ export type Offer = {
   message: string | null
   status: 'pending' | 'accepted' | 'rejected'
   created_at: string
+  // Pickup fields (added via SQL migration)
+  pickup_window: string | null
+  pickup_date: string | null
 }

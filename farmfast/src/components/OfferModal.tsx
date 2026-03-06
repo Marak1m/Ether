@@ -10,14 +10,26 @@ interface OfferModalProps {
   onClose: () => void
 }
 
+const PICKUP_OPTIONS = [
+  'Today morning (8 AM - 12 PM)',
+  'Today afternoon (12 PM - 5 PM)',
+  'Today evening (5 PM - 8 PM)',
+  'Tomorrow morning (8 AM - 12 PM)',
+  'Tomorrow afternoon (12 PM - 5 PM)',
+]
+
 export function OfferModal({ listing, onClose }: OfferModalProps) {
+  const reservePrice = listing.reserve_price ?? listing.price_range_min
+  const mandiPrice = listing.mandi_modal_price
+
   const [buyerName, setBuyerName] = useState('')
   const [buyerPhone, setBuyerPhone] = useState('')
-  const [pricePerKg, setPricePerKg] = useState(listing.price_range_min)
-  const [pickupTime, setPickupTime] = useState('Within 2 hours')
+  const [pricePerKg, setPricePerKg] = useState(reservePrice)
+  const [pickupWindow, setPickupWindow] = useState(PICKUP_OPTIONS[0])
   const [message, setMessage] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [success, setSuccess] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const totalAmount = pricePerKg * listing.quantity_kg
   const commission = totalAmount * 0.02
@@ -25,6 +37,7 @@ export function OfferModal({ listing, onClose }: OfferModalProps) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setSubmitting(true)
+    setError(null)
 
     try {
       const response = await fetch('/api/offers', {
@@ -35,18 +48,29 @@ export function OfferModal({ listing, onClose }: OfferModalProps) {
           buyer_name: buyerName,
           buyer_phone: buyerPhone || null,
           price_per_kg: pricePerKg,
-          pickup_time: pickupTime,
+          pickup_window: pickupWindow,
           message: message || null
         })
       })
 
-      if (!response.ok) throw new Error('Failed to submit offer')
+      if (!response.ok) {
+        const data = await response.json()
+        if (data.error === 'BELOW_RESERVE') {
+          setError(`Below platform minimum. Please offer at least ₹${data.reserve_price}/kg.`)
+          return
+        }
+        if (data.error === 'AUCTION_CLOSED') {
+          setError('This auction has closed. No more offers can be submitted.')
+          return
+        }
+        throw new Error(data.error || 'Failed to submit offer')
+      }
 
       setSuccess(true)
       setTimeout(() => onClose(), 2000)
-    } catch (error) {
-      console.error('Offer submission error:', error)
-      alert('Failed to submit offer. Please try again.')
+    } catch (err) {
+      console.error('Offer submission error:', err)
+      setError('Failed to submit offer. Please try again.')
     } finally {
       setSubmitting(false)
     }
@@ -137,7 +161,7 @@ export function OfferModal({ listing, onClose }: OfferModalProps) {
               <input
                 type="number"
                 required
-                min="1"
+                min={reservePrice}
                 step="0.5"
                 value={pricePerKg}
                 onChange={(e) => setPricePerKg(parseFloat(e.target.value))}
@@ -145,30 +169,36 @@ export function OfferModal({ listing, onClose }: OfferModalProps) {
               />
               <input
                 type="range"
-                min={listing.price_range_min - 5}
-                max={listing.price_range_max + 5}
+                min={reservePrice}
+                max={listing.price_range_max + 10}
                 step="0.5"
                 value={pricePerKg}
                 onChange={(e) => setPricePerKg(parseFloat(e.target.value))}
                 className="w-full mt-2"
               />
+              {/* Reserve / mandi context */}
+              {listing.reserve_price != null && (
+                <p className="text-xs text-orange-600 mt-1">
+                  🔒 Minimum ₹{listing.reserve_price}/kg
+                  {mandiPrice != null ? ` — above today's mandi rate of ₹${mandiPrice}/kg.` : '.'}
+                </p>
+              )}
             </div>
 
-            {/* Pickup time */}
+            {/* Pickup window */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Pickup Time *
+                Pickup Window *
               </label>
               <select
                 required
-                value={pickupTime}
-                onChange={(e) => setPickupTime(e.target.value)}
+                value={pickupWindow}
+                onChange={(e) => setPickupWindow(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
               >
-                <option>Within 2 hours</option>
-                <option>Within 4 hours</option>
-                <option>Same day evening</option>
-                <option>Next morning</option>
+                {PICKUP_OPTIONS.map(opt => (
+                  <option key={opt} value={opt}>{opt}</option>
+                ))}
               </select>
             </div>
 
@@ -185,6 +215,13 @@ export function OfferModal({ listing, onClose }: OfferModalProps) {
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
               />
             </div>
+
+            {/* Error */}
+            {error && (
+              <div className="bg-red-50 text-red-700 text-sm px-3 py-2 rounded-lg border border-red-200">
+                {error}
+              </div>
+            )}
 
             {/* Summary */}
             <div className="bg-green-50 p-3 rounded-lg">

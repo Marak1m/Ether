@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
-import { gradeProduceImage } from '@/lib/bedrock'
+import { gradeWithFallback } from '@/lib/bedrock'
 import { uploadProduceImage } from '@/lib/s3'
 import { sendWhatsAppMessage, formatPhoneNumber } from '@/lib/twilio'
 import { getCoordinatesFromPincode } from '@/lib/geocoding'
@@ -23,6 +23,7 @@ function normalizePhone(phone: string): string {
 }
 
 // Check if a session is stale (older than 24 hours without activity)
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function isSessionStale(session: any): boolean {
   if (!session?.last_message_at) return false
   const lastMessage = new Date(session.last_message_at).getTime()
@@ -304,10 +305,23 @@ export async function POST(req: NextRequest) {
           console.error('S3 upload failed, using Twilio URL as fallback:', s3Error)
         }
 
-        // Grade with AWS Bedrock (Claude)
-        const gradeResult = await gradeProduceImage(imageBase64)
+        // Extract district from farmer's location for mandi price lookup
+        const farmerDistrict = farmer?.location
+          ? farmer.location.split(',')[0].trim()
+          : 'Pune'
 
-        // Save listing to database
+        // Grade with Bedrock (Nova Lite → Nova Pro → null)
+        const gradeResult = await gradeWithFallback(imageBase64, farmerDistrict)
+
+        if (!gradeResult) {
+          await sendWhatsAppMessage(
+            from,
+            '⚠️ फोटो जांच नहीं हो सकी। अच्छी रोशनी में दोबारा भेजें।'
+          )
+          return NextResponse.json({ success: true })
+        }
+
+        // Save listing to database (with auction fields)
         const { data: listing, error } = await supabase
           .from('listings')
           .insert({
@@ -327,8 +341,11 @@ export async function POST(req: NextRequest) {
             image_url: imageRef,
             hindi_summary: gradeResult.hindi_summary,
             confidence_score: gradeResult.confidence,
-            quality_factors: gradeResult.quality_factors,
-            status: 'active'
+            status: 'active',
+            reserve_price: gradeResult.reserve_price,
+            mandi_modal_price: gradeResult.mandi_price,
+            auction_closes_at: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
+            auction_status: 'open',
           })
           .select()
           .single()
@@ -345,14 +362,21 @@ export async function POST(req: NextRequest) {
           })
           .eq('farmer_phone', from)
 
-        // Send grade result
+        // Build grading success message with mandi context
         const gradeEmoji = gradeResult.grade === 'A' ? '🌟' : gradeResult.grade === 'B' ? '✅' : '👍'
-        const message = `${gradeEmoji} *ग्रेड ${gradeResult.grade}*\n\n${gradeResult.hindi_summary}\n\n*उचित भाव:* ₹${gradeResult.price_range_min}-${gradeResult.price_range_max}/किलो\n*ताजगी:* ${gradeResult.shelf_life_days} दिन\n\n${farmer ? '📦 अब कितने किलो बेचना है? कृपया संख्या भेजें (जैसे: 500)' : '📍 अब अपना पिनकोड भेजें (जैसे: 411001)'}`
+        const premium = gradeResult.mandi_price > 0
+          ? Math.round(((gradeResult.reserve_price - gradeResult.mandi_price) / gradeResult.mandi_price) * 100)
+          : 0
+        const gradeMsg =
+          `${gradeEmoji} ${gradeResult.crop_type} Grade ${gradeResult.grade} — ₹${gradeResult.price_range_min}-${gradeResult.price_range_max}/किलो। ताजगी ${gradeResult.shelf_life_days} दिन।\n` +
+          `📊 आज ${farmerDistrict} मंडी भाव: ₹${gradeResult.mandi_price}/किलो\n` +
+          `✅ FarmFast न्यूनतम: ₹${gradeResult.reserve_price}/किलो (मंडी से ${premium}% ज्यादा)\n` +
+          `2 घंटे में सबसे अच्छा ऑफर मिलेगा।\n\n` +
+          (farmer ? '📦 अब कितने किलो बेचना है? कृपया संख्या भेजें (जैसे: 500)' : '📍 अब अपना पिनकोड भेजें (जैसे: 411001)')
 
-        await sendWhatsAppMessage(from, message)
+        await sendWhatsAppMessage(from, gradeMsg)
       } catch (error) {
         console.error('Image grading error:', error)
-        // Send user-friendly error instead of leaving farmer hanging
         await sendWhatsAppMessage(
           from,
           '❌ माफ करें, फोटो की जांच में समस्या आई।\n\nकृपया दोबारा कोशिश करें:\n📸 अच्छी रोशनी में साफ फोटो भेजें\n📷 पूरी फसल दिखनी चाहिए\n\nफिर से फोटो भेजें!'
@@ -509,11 +533,16 @@ export async function POST(req: NextRequest) {
       }
 
       if (selectedOffer) {
-        // Accept the selected offer
+        // Accept the selected offer and mark auction as accepted
         await supabase
           .from('offers')
           .update({ status: 'accepted' })
           .eq('id', selectedOffer.id)
+
+        await supabase
+          .from('listings')
+          .update({ auction_status: 'accepted' })
+          .eq('id', session.current_listing_id)
 
         // Reject other offers
         const otherOfferIds = offers.filter(o => o.id !== selectedOffer!.id).map(o => o.id)
@@ -524,10 +553,31 @@ export async function POST(req: NextRequest) {
             .in('id', otherOfferIds)
         }
 
+        // Notify farmer (Hindi)
         await sendWhatsAppMessage(
           from,
-          `✅ ऑफर स्वीकार किया गया!\n\n*खरीददार:* ${selectedOffer.buyer_name}\n*भाव:* ₹${selectedOffer.price_per_kg}/किलो\n*कुल:* ₹${selectedOffer.total_amount}\n\n💰 खरीददार ने पेमेंट जमा कर दिया है।\n📞 खरीददार आपसे जल्द संपर्क करेगा।\n\nमाल देने के बाद "माल दे दिया" लिखकर भेजें, तो पैसा तुरंत आपके खाते में आ जाएगा। 🎉`
+          `✅ ऑफर स्वीकार हुआ! खरीददार: ${selectedOffer.buyer_name} | पिकअप: ${selectedOffer.pickup_window || selectedOffer.pickup_time || 'जल्द'}\n` +
+          `कुल: ₹${selectedOffer.total_amount} | पैसे सुरक्षित हैं — माल देने पर तुरंत मिलेंगे।\n\n` +
+          `माल देने के बाद "माल दे दिया" लिखकर भेजें। 🎉`
         )
+
+        // Notify buyer (English) if phone available
+        if (selectedOffer.buyer_phone) {
+          const listing = await supabase
+            .from('listings')
+            .select('quantity_kg')
+            .eq('id', session.current_listing_id)
+            .single()
+          const qty = listing.data?.quantity_kg ?? 0
+          const total = Math.round(selectedOffer.price_per_kg * qty)
+          await sendWhatsAppMessage(
+            selectedOffer.buyer_phone,
+            `✅ Offer accepted! Farmer: ${farmer?.name || 'Farmer'}, ${farmer?.location || 'India'}\n` +
+            `Pickup: ${selectedOffer.pickup_window || selectedOffer.pickup_time || 'TBD'} | ` +
+            `Total: ₹${selectedOffer.price_per_kg} × ${qty} kg = ₹${total}\n` +
+            `Payment in escrow — released on handover confirmation.`
+          ).catch(() => {}) // best-effort
+        }
 
         await supabase
           .from('chat_sessions')
@@ -691,7 +741,7 @@ export async function POST(req: NextRequest) {
           .eq('phone', from)
 
         await sendWhatsAppMessage(from, `✅ पिनकोड अपडेट हो गया!\n\n📮 नया पिनकोड: ${newPincode}\n📍 स्थान: ${coords.display_name}`)
-      } catch (error) {
+      } catch {
         await sendWhatsAppMessage(from, '❌ पिनकोड नहीं मिला। कृपया सही पिनकोड बताएं।')
       }
 
