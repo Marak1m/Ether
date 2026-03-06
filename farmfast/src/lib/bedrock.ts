@@ -1,10 +1,18 @@
 // Amazon Bedrock — Nova Lite (image grading) + Nova Micro (Hindi chat)
-// Uses Bedrock API Key (Bearer token) for authentication
+// Uses official AWS SDK for proper SigV4 authentication
 
-const BEDROCK_API_KEY = process.env.BEDROCK_API_KEY || ''
+import { BedrockRuntimeClient, InvokeModelCommand } from "@aws-sdk/client-bedrock-runtime"
+
 const AWS_REGION = process.env.AWS_REGION || 'us-east-1'
 
-const BEDROCK_ENDPOINT = `https://bedrock-runtime.${AWS_REGION}.amazonaws.com`
+// Extract credentials exactly as configured in AWS App Runner
+const client = new BedrockRuntimeClient({
+  region: AWS_REGION,
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || ''
+  }
+})
 
 export interface QualityGradeResult {
   crop_type: string
@@ -26,6 +34,9 @@ export async function gradeProduceImage(
   imageBase64: string
 ): Promise<QualityGradeResult> {
 
+  // Ensure it's purely base64 data without any data: URI prefix
+  const cleanBase64 = imageBase64.replace(/^data:image\/\w+;base64,/, '')
+
   const payload = {
     messages: [
       {
@@ -35,7 +46,7 @@ export async function gradeProduceImage(
             image: {
               format: "jpeg",
               source: {
-                bytes: imageBase64
+                bytes: cleanBase64
               }
             }
           },
@@ -67,32 +78,26 @@ Grade A: <10% defects. Grade B: 10-30% defects. Grade C: >30% defects.`
     }
   }
 
-  const response = await fetch(
-    `${BEDROCK_ENDPOINT}/model/amazon.nova-lite-v1:0/invoke`,
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'Authorization': `Bearer ${BEDROCK_API_KEY}`
-      },
-      body: JSON.stringify(payload)
-    }
-  )
+  const command = new InvokeModelCommand({
+    modelId: 'amazon.nova-lite-v1:0',
+    contentType: 'application/json',
+    accept: 'application/json',
+    body: JSON.stringify(payload)
+  })
 
-  if (!response.ok) {
-    const errorText = await response.text()
-    console.error(`Bedrock Nova Lite error (${response.status}):`, errorText)
-    throw new Error(`Bedrock API error: ${response.status} — ${errorText}`)
+  try {
+    const response = await client.send(command)
+    const resultJson = JSON.parse(new TextDecoder().decode(response.body))
+    const text = resultJson.output.message.content[0].text
+      .replace(/```json\n?/g, '')
+      .replace(/```\n?/g, '')
+      .trim()
+
+    return JSON.parse(text) as QualityGradeResult
+  } catch (error: any) {
+    console.error(`Bedrock Nova Lite SDK error:`, error)
+    throw new Error(`Bedrock SDK API error: ${error.message}`)
   }
-
-  const body = await response.json()
-  const text = body.output.message.content[0].text
-    .replace(/```json\n?/g, '')
-    .replace(/```\n?/g, '')
-    .trim()
-
-  return JSON.parse(text) as QualityGradeResult
 }
 
 // ─── Amazon Nova Micro: Hindi chat responses (text only, ultra cheap) ─────────
@@ -120,25 +125,19 @@ Reply in Hindi in 1-2 friendly sentences.`
     }
   }
 
-  const response = await fetch(
-    `${BEDROCK_ENDPOINT}/model/amazon.nova-micro-v1:0/invoke`,
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'Authorization': `Bearer ${BEDROCK_API_KEY}`
-      },
-      body: JSON.stringify(payload)
-    }
-  )
+  const command = new InvokeModelCommand({
+    modelId: 'amazon.nova-micro-v1:0',
+    contentType: 'application/json',
+    accept: 'application/json',
+    body: JSON.stringify(payload)
+  })
 
-  if (!response.ok) {
-    const errorText = await response.text()
-    console.error(`Bedrock Nova Micro error (${response.status}):`, errorText)
-    throw new Error(`Bedrock API error: ${response.status} — ${errorText}`)
+  try {
+    const response = await client.send(command)
+    const resultJson = JSON.parse(new TextDecoder().decode(response.body))
+    return resultJson.output.message.content[0].text
+  } catch (error: any) {
+    console.error(`Bedrock Nova Micro SDK error:`, error)
+    throw new Error(`Bedrock SDK API error: ${error.message}`)
   }
-
-  const body = await response.json()
-  return body.output.message.content[0].text
 }
