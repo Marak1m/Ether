@@ -1,0 +1,54 @@
+name: Build and Push to ECR
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Write NEXT_PUBLIC env vars for Docker build
+        # These must be present during `next build` so they are baked
+        # into the client bundle. The Dockerfile has no ARG declarations,
+        # so we write a .env.production that Next.js reads at build time.
+        run: |
+          cat > farmfast/.env.production <<EOF
+          NEXT_PUBLIC_SUPABASE_URL=${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          NEXT_PUBLIC_APP_URL=https://vd7sn5hz9z.us-east-1.awsapprunner.com
+          EOF
+
+      - name: Build Docker image
+        run: docker build -t farmfast:latest farmfast/
+
+      - name: Remove NEXT_PUBLIC env file
+        # Clean up before pushing — do not leave secrets in the layer cache
+        run: rm -f farmfast/.env.production
+
+      - name: Tag and push to ECR
+        run: |
+          ECR_URI="993666109291.dkr.ecr.us-east-1.amazonaws.com/farmfast"
+          docker tag farmfast:latest $ECR_URI:latest
+          docker tag farmfast:latest $ECR_URI:${{ github.sha }}
+          docker push $ECR_URI:latest
+          docker push $ECR_URI:${{ github.sha }}
+          echo "Pushed $ECR_URI:${{ github.sha }}"
+
+      # App Runner has AutoDeploymentsEnabled: true — it detects the new
+      # ECR image and redeploys automatically. No manual trigger needed.

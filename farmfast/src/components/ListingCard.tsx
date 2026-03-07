@@ -95,36 +95,45 @@ export function ListingCard({ listing }: ListingCardProps) {
     setShowOfferModal(true)
   }
 
+  // Change 1: updated emoji map with user-specified crops + fallback 🌿
   const cropEmojis: Record<string, string> = {
     'Tomato': '🍅', 'Onion': '🧅', 'Potato': '🥔',
-    'Mango': '🥭', 'Banana': '🍌', 'Cabbage': '🥬',
-    'Wheat': '🌾', 'Rice': '🍚', 'Apple': '🍎',
+    'Rice': '🌾', 'Mango': '🥭', 'Cauliflower': '🥦',
+    'Banana': '🍌',
   }
-  const emoji = cropEmojis[listing.crop_type] || '🌾'
+  const emoji = cropEmojis[listing.crop_type] || '🌿'
 
   const auctionIsOpen = auctionStatus === 'open'
   const auctionIsClosed = auctionStatus === 'closed'
   const auctionIsAccepted = auctionStatus === 'accepted'
   const offerCount = listing.offer_count ?? 0
 
+  // Suppress unused warning — timeLeft drives auto-close logic in useEffect
+  void timeLeft
+  void formatCountdown
+
   return (
     <>
       <div className="glass-strong rounded-2xl border border-gray-100/50 card-glow p-5 transition-all duration-300">
         <div className="flex gap-4">
-          {/* Image */}
+          {/* Image — Change 1: show emoji placeholder when image_url is null/empty */}
           <div className="flex-shrink-0 w-28 h-28 rounded-xl overflow-hidden bg-gradient-to-br from-green-50 to-emerald-50 shadow-inner">
-            <img
-              src={listing.image_url}
-              alt={listing.crop_type}
-              className="w-full h-full object-cover"
-              onError={(e) => {
-                e.currentTarget.style.display = 'none'
-                if (e.currentTarget.parentElement) {
-                  e.currentTarget.parentElement.innerHTML =
-                    `<div class="w-full h-full flex items-center justify-center text-5xl">${emoji}</div>`
-                }
-              }}
-            />
+            {listing.image_url ? (
+              <img
+                src={listing.image_url}
+                alt={listing.crop_type}
+                className="w-full h-full object-cover"
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none'
+                  if (e.currentTarget.parentElement) {
+                    e.currentTarget.parentElement.innerHTML =
+                      `<div class="w-full h-full flex items-center justify-center text-5xl">${emoji}</div>`
+                  }
+                }}
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center text-5xl">{emoji}</div>
+            )}
           </div>
 
           {/* Content */}
@@ -165,9 +174,10 @@ export function ListingCard({ listing }: ListingCardProps) {
                 <Package className="w-3.5 h-3.5 text-gray-400" />
                 <span>{listing.quantity_kg} kg</span>
               </div>
+              {/* Change 2: null guard on shelf_life_days to prevent "Fresh d" */}
               <div className="flex items-center gap-1.5">
                 <Clock className="w-3.5 h-3.5 text-gray-400" />
-                <span>Fresh {listing.shelf_life_days}d</span>
+                <span>Fresh {listing.shelf_life_days ?? '?'}d</span>
               </div>
               <div className="flex items-center gap-1.5 col-span-2">
                 <MapPin className="w-3.5 h-3.5 text-gray-400" />
@@ -188,11 +198,16 @@ export function ListingCard({ listing }: ListingCardProps) {
               </span>
             </div>
 
-            {/* Mandi + Reserve price context */}
+            {/* Change 3: Mandi label renamed + "no middleman markup" subtext */}
             {listing.mandi_modal_price != null && (
-              <p className="text-xs text-gray-400 mb-0.5">
-                Mandi today: ₹{listing.mandi_modal_price}/kg
-              </p>
+              <div className="mb-0.5">
+                <p className="text-xs text-gray-400">
+                  Market wholesale: ₹{listing.mandi_modal_price}/kg
+                </p>
+                <p className="text-[10px] text-emerald-600 font-medium">
+                  Direct from farmer — no middleman markup
+                </p>
+              </div>
             )}
             {listing.reserve_price != null && (
               <p className="text-xs text-orange-500 flex items-center gap-1 mb-2">
@@ -212,14 +227,10 @@ export function ListingCard({ listing }: ListingCardProps) {
               </div>
             ) : auctionIsOpen ? (
               <div className="mb-2">
-                <div className="flex items-center justify-between text-xs mb-1.5">
-                  <span className="text-red-500 font-mono font-bold">
-                    ⏱ {formatCountdown(timeLeft)} left
-                  </span>
-                  <span className="text-gray-500">
-                    {offerCount} offer{offerCount !== 1 ? 's' : ''} submitted
-                  </span>
-                </div>
+                {/* Change 4: countdown timer removed; offer count kept */}
+                <p className="text-xs text-gray-500 mb-1.5">
+                  {offerCount} offer{offerCount !== 1 ? 's' : ''} submitted
+                </p>
                 {/* Action button — only shown when auction is open */}
                 <button
                   onClick={handleOfferClick}

@@ -18,9 +18,15 @@ const PICKUP_OPTIONS = [
   'Tomorrow afternoon (12 PM - 5 PM)',
 ]
 
+const CROP_EMOJIS: Record<string, string> = {
+  'Tomato': '🍅', 'Onion': '🧅', 'Potato': '🥔',
+  'Rice': '🌾', 'Mango': '🥭', 'Cauliflower': '🥦',
+  'Banana': '🍌',
+}
+
 export function OfferModal({ listing, onClose }: OfferModalProps) {
   const reservePrice = listing.reserve_price ?? listing.price_range_min
-  const mandiPrice = listing.mandi_modal_price
+  const cropEmoji = CROP_EMOJIS[listing.crop_type] || '🌿'
 
   const [buyerName, setBuyerName] = useState('')
   const [buyerPhone, setBuyerPhone] = useState('')
@@ -77,19 +83,29 @@ export function OfferModal({ listing, onClose }: OfferModalProps) {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+    // Change 5a: backdrop click closes modal
+    <div
+      className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200"
+      onClick={onClose}
+    >
+      {/* Change 5a: card stops propagation; relative enables absolute X button */}
+      <div
+        className="bg-white rounded-2xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto relative"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Change 5b: X button absolutely positioned in top-right corner */}
+        <button
+          onClick={onClose}
+          className="absolute top-3 right-3 z-10 text-gray-400 hover:text-gray-600 transition-colors hover:bg-gray-100 rounded-full p-1"
+        >
+          <X className="w-5 h-5" />
+        </button>
+
         {/* Header */}
-        <div className="flex items-center justify-between p-5 border-b bg-gradient-to-r from-green-50 to-blue-50">
+        <div className="flex items-center p-5 border-b bg-gradient-to-r from-green-50 to-blue-50">
           <h2 className="text-xl font-bold bg-gradient-to-r from-green-600 to-blue-600 bg-clip-text text-transparent">
             Submit Offer
           </h2>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 transition-colors hover:bg-gray-100 rounded-full p-1"
-          >
-            <X className="w-5 h-5" />
-          </button>
         </div>
 
         {success ? (
@@ -107,11 +123,18 @@ export function OfferModal({ listing, onClose }: OfferModalProps) {
             {/* Listing info */}
             <div className="bg-gray-50 p-3 rounded-lg">
               <div className="flex items-center gap-3 mb-2">
-                <img
-                  src={listing.image_url}
-                  alt={listing.crop_type}
-                  className="w-16 h-16 rounded object-cover"
-                />
+                {/* Change 5d: image null guard */}
+                {listing.image_url ? (
+                  <img
+                    src={listing.image_url}
+                    alt={listing.crop_type}
+                    className="w-16 h-16 rounded object-cover flex-shrink-0"
+                  />
+                ) : (
+                  <div className="w-16 h-16 rounded bg-green-50 flex items-center justify-center text-3xl flex-shrink-0">
+                    {cropEmoji}
+                  </div>
+                )}
                 <div>
                   <h3 className="font-semibold">{listing.crop_type}</h3>
                   <p className="text-sm text-gray-600">
@@ -176,11 +199,10 @@ export function OfferModal({ listing, onClose }: OfferModalProps) {
                 onChange={(e) => setPricePerKg(parseFloat(e.target.value))}
                 className="w-full mt-2"
               />
-              {/* Reserve / mandi context */}
+              {/* Change 5c: simplified — no mandi rate suffix */}
               {listing.reserve_price != null && (
                 <p className="text-xs text-orange-600 mt-1">
                   🔒 Minimum ₹{listing.reserve_price}/kg
-                  {mandiPrice != null ? ` — above today's mandi rate of ₹${mandiPrice}/kg.` : '.'}
                 </p>
               )}
             </div>
