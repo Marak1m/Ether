@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Leaf, Mail, Lock, User, Phone, Building, MapPin, ArrowRight } from 'lucide-react'
@@ -21,32 +21,67 @@ export default function RegisterPage() {
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [geocoding, setGeocoding] = useState(false)
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     setFormData({
       ...formData,
       [e.target.name]: e.target.value,
     })
+    // Clear field-level error on change
+    if (fieldErrors[e.target.name]) {
+      setFieldErrors(prev => { const next = { ...prev }; delete next[e.target.name]; return next })
+    }
+  }
+
+  // Auto-geocode pincode when it reaches 6 digits
+  useEffect(() => {
+    const pincode = formData.pincode.replace(/\s/g, '')
+    if (!/^\d{6}$/.test(pincode)) return
+
+    let cancelled = false
+    setGeocoding(true)
+    getCoordinatesFromPincode(pincode)
+      .then(coords => {
+        if (cancelled) return
+        // Auto-fill address from geocoded display_name if address is still empty
+        if (!formData.address && coords.display_name) {
+          // Reformat: remove leading pincode if Nominatim puts it first, then append pincode at end
+          const parts = coords.display_name.split(',').map((s: string) => s.trim())
+          const withoutPincode = parts.filter((p: string) => p !== pincode)
+          const formatted = `${withoutPincode.join(', ')} - ${pincode}`
+          setFormData(prev => ({ ...prev, address: formatted }))
+        }
+      })
+      .catch(() => { /* ignore geocoding errors silently */ })
+      .finally(() => { if (!cancelled) setGeocoding(false) })
+
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formData.pincode])
+
+  const validate = (): boolean => {
+    const errors: Record<string, string> = {}
+    if (!formData.name.trim()) errors.name = 'Full name is required'
+    if (!formData.email.trim()) errors.email = 'Email is required'
+    if (!formData.phone.trim()) errors.phone = 'Phone number is required'
+    if (!formData.pincode.trim()) errors.pincode = 'Pincode is required'
+    else if (!/^\d{6}$/.test(formData.pincode.replace(/\s/g, ''))) errors.pincode = 'Enter a valid 6-digit pincode'
+    if (!formData.address.trim()) errors.address = 'Address is required'
+    if (formData.password.length < 6) errors.password = 'Password must be at least 6 characters'
+    if (formData.password !== formData.confirmPassword) errors.confirmPassword = 'Passwords do not match'
+    setFieldErrors(errors)
+    return Object.keys(errors).length === 0
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setLoading(true)
     setError('')
 
-    // Validation
-    if (formData.password !== formData.confirmPassword) {
-      setError('Passwords do not match')
-      setLoading(false)
-      return
-    }
+    if (!validate()) return
 
-    if (formData.password.length < 6) {
-      setError('Password must be at least 6 characters')
-      setLoading(false)
-      return
-    }
-
+    setLoading(true)
     try {
       // Sign up user
       const { user } = await signUp(formData.email, formData.password, formData.name)
@@ -58,9 +93,10 @@ export default function RegisterPage() {
       // Get coordinates from pincode
       let latitude = null
       let longitude = null
-      if (formData.pincode) {
+      const pincode = formData.pincode.replace(/\s/g, '')
+      if (pincode) {
         try {
-          const coords = await getCoordinatesFromPincode(formData.pincode)
+          const coords = await getCoordinatesFromPincode(pincode)
           latitude = coords.lat
           longitude = coords.lon
         } catch (err) {
@@ -75,7 +111,7 @@ export default function RegisterPage() {
         name: formData.name,
         phone: formData.phone || null,
         business_name: formData.businessName || null,
-        pincode: formData.pincode || null,
+        pincode: pincode || null,
         address: formData.address || null,
         latitude,
         longitude,
@@ -89,6 +125,11 @@ export default function RegisterPage() {
       setLoading(false)
     }
   }
+
+  const inputClass = (field: string) =>
+    `w-full pl-10 pr-4 py-3 border rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent ${
+      fieldErrors[field] ? 'border-red-400 bg-red-50' : 'border-gray-300'
+    }`
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-50 via-blue-50 to-purple-50 flex items-center justify-center p-4 py-12">
@@ -132,9 +173,10 @@ export default function RegisterPage() {
                     value={formData.name}
                     onChange={handleChange}
                     placeholder="John Doe"
-                    className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    className={inputClass('name')}
                   />
                 </div>
+                {fieldErrors.name && <p className="mt-1 text-xs text-red-600">{fieldErrors.name}</p>}
               </div>
 
               {/* Email */}
@@ -151,9 +193,10 @@ export default function RegisterPage() {
                     value={formData.email}
                     onChange={handleChange}
                     placeholder="buyer@example.com"
-                    className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    className={inputClass('email')}
                   />
                 </div>
+                {fieldErrors.email && <p className="mt-1 text-xs text-red-600">{fieldErrors.email}</p>}
               </div>
 
               {/* Password */}
@@ -170,9 +213,10 @@ export default function RegisterPage() {
                     value={formData.password}
                     onChange={handleChange}
                     placeholder="••••••••"
-                    className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    className={inputClass('password')}
                   />
                 </div>
+                {fieldErrors.password && <p className="mt-1 text-xs text-red-600">{fieldErrors.password}</p>}
               </div>
 
               {/* Confirm Password */}
@@ -189,27 +233,30 @@ export default function RegisterPage() {
                     value={formData.confirmPassword}
                     onChange={handleChange}
                     placeholder="••••••••"
-                    className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    className={inputClass('confirmPassword')}
                   />
                 </div>
+                {fieldErrors.confirmPassword && <p className="mt-1 text-xs text-red-600">{fieldErrors.confirmPassword}</p>}
               </div>
 
               {/* Phone */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Phone Number
+                  Phone Number *
                 </label>
                 <div className="relative">
                   <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
                   <input
                     type="tel"
                     name="phone"
+                    required
                     value={formData.phone}
                     onChange={handleChange}
                     placeholder="+91 98765 43210"
-                    className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    className={inputClass('phone')}
                   />
                 </div>
+                {fieldErrors.phone && <p className="mt-1 text-xs text-red-600">{fieldErrors.phone}</p>}
               </div>
 
               {/* Business Name */}
@@ -233,36 +280,48 @@ export default function RegisterPage() {
               {/* Pincode */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Pincode
+                  Pincode *
                 </label>
                 <div className="relative">
                   <MapPin className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
                   <input
                     type="text"
                     name="pincode"
+                    required
                     value={formData.pincode}
                     onChange={handleChange}
                     placeholder="411001"
                     maxLength={6}
-                    className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    className={inputClass('pincode')}
                   />
+                  {geocoding && (
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 animate-pulse">
+                      Locating…
+                    </span>
+                  )}
                 </div>
+                {fieldErrors.pincode && <p className="mt-1 text-xs text-red-600">{fieldErrors.pincode}</p>}
+                {!fieldErrors.pincode && (
+                  <p className="mt-1 text-xs text-gray-400">Enter your 6-digit pincode — address will auto-fill</p>
+                )}
               </div>
             </div>
 
             {/* Address */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Address
+                Address *
               </label>
               <textarea
                 name="address"
+                required
                 value={formData.address}
                 onChange={handleChange}
                 placeholder="Shop No. 5, Market Road, Pune"
                 rows={3}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent ${fieldErrors.address ? 'border-red-400 bg-red-50' : 'border-gray-300'}`}
               />
+              {fieldErrors.address && <p className="mt-1 text-xs text-red-600">{fieldErrors.address}</p>}
             </div>
 
             {/* Submit Button */}

@@ -65,17 +65,23 @@ export async function POST(req: NextRequest) {
         .select('*', { count: 'exact', head: true })
         .eq('listing_id', listing_id)
 
+      // Calculate auction time remaining
+      const closesAt = listing.auction_closes_at ? new Date(listing.auction_closes_at) : null
+      const minutesLeft = closesAt ? Math.max(0, Math.round((closesAt.getTime() - Date.now()) / 60000)) : null
+
       const whatsappMessage =
-        `🎉 *नया ऑफर मिला!* (ऑफर #${offerCount})\n\n` +
-        `*खरीददार:* ${buyer_name}\n` +
-        `*भाव:* ₹${price_per_kg}/किलो\n` +
-        `*कुल राशि:* ₹${total_amount.toFixed(0)}\n` +
-        `*पिकअप:* ${resolvedPickupWindow}\n\n` +
-        (message ? `*संदेश:* ${message}\n\n` : '') +
-        `यह ${listing.quality_grade} ग्रेड ${listing.crop_type} के लिए ${price_per_kg >= listing.price_range_max ? 'बहुत अच्छा' : 'अच्छा'} ऑफर है!\n\n` +
+        `🎉 *New Offer on Your ${listing.crop_type}!* (Offer #${offerCount})\n\n` +
+        `👤 Buyer: ${buyer_name}\n` +
+        `💰 Price: ₹${price_per_kg}/kg\n` +
+        `📦 Qty: ${listing.quantity_kg} kg → Total: ₹${total_amount.toFixed(0)}\n` +
+        `🚚 Pickup: ${resolvedPickupWindow}\n` +
+        (message ? `💬 Note: ${message}\n` : '') +
+        (minutesLeft !== null
+          ? `\n⏰ Your auction closes in *${minutesLeft} minute${minutesLeft !== 1 ? 's' : ''}*.\n`
+          : '\n') +
         (offerCount === 1
-          ? '⏳ और ऑफर का इंतजार करें या "1" लिखकर स्वीकार करें।'
-          : '💡 सबसे अच्छा ऑफर चुनने के लिए "status" लिखें।')
+          ? '\nWait for more offers, or reply *1* to accept this offer now.'
+          : `\nYou have *${offerCount} offers*. Reply "offers" to see all, or a number to accept.`)
 
       await sendWhatsAppMessage(listing.farmer_phone, whatsappMessage)
 

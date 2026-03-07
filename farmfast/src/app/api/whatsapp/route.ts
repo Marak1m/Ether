@@ -495,6 +495,39 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true })
     }
 
+    // Handle listing_active state — farmer can close auction early
+    if (session?.conversation_state === 'listing_active') {
+      const isCloseCmd =
+        lowerBody === 'close' ||
+        lowerBody === 'band karo' ||
+        lowerBody === 'band kar' ||
+        lowerBody === 'बंद करो' ||
+        lowerBody === 'बंद करें' ||
+        lowerBody.startsWith('close auction')
+
+      if (isCloseCmd && session.current_listing_id) {
+        await supabase
+          .from('listings')
+          .update({ auction_status: 'closed' })
+          .eq('id', session.current_listing_id)
+
+        await supabase
+          .from('chat_sessions')
+          .update({
+            conversation_state: 'reviewing_offers',
+            last_message_at: new Date().toISOString()
+          })
+          .eq('farmer_phone', from)
+
+        await sendWhatsAppMessage(
+          from,
+          '🔒 नीलामी बंद कर दी गई है।\n\nAuction closed. Reply "offers" to see all bids received.'
+        )
+        return NextResponse.json({ success: true })
+      }
+      // Any other message in listing_active — fall through to general handlers below
+    }
+
     // Handle offer acceptance
     if (session?.conversation_state === 'reviewing_offers') {
       // Fetch all pending offers for this listing

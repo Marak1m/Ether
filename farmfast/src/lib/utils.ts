@@ -11,14 +11,14 @@ export function formatTime(date: string): string {
   const diffMs = now.getTime() - d.getTime()
   const diffMins = Math.floor(diffMs / 60000)
   
-  if (diffMins < 1) return 'अभी'
-  if (diffMins < 60) return `${diffMins} मिनट पहले`
-  
+  if (diffMins < 1) return 'just now'
+  if (diffMins < 60) return `${diffMins} min ago`
+
   const diffHours = Math.floor(diffMins / 60)
-  if (diffHours < 24) return `${diffHours} घंटे पहले`
-  
+  if (diffHours < 24) return `${diffHours} hour${diffHours !== 1 ? 's' : ''} ago`
+
   const diffDays = Math.floor(diffHours / 24)
-  return `${diffDays} दिन पहले`
+  return `${diffDays} day${diffDays !== 1 ? 's' : ''} ago`
 }
 
 export function formatCurrency(amount: number): string {

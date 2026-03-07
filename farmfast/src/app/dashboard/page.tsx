@@ -22,6 +22,7 @@ export default function Home() {
   const [checkingAuth, setCheckingAuth] = useState(true)
   const [newListingAlert, setNewListingAlert] = useState(false)
   const [cropFilter, setCropFilter] = useState<string>('all')
+  const [showClosed, setShowClosed] = useState(false)
 
   useEffect(() => {
     checkAuth()
@@ -120,10 +121,12 @@ export default function Home() {
   // Get unique crop types for filter
   const cropTypes = Array.from(new Set(listings.map(l => l.crop_type)))
 
-  // Apply crop filter
-  const filteredListings = cropFilter === 'all'
-    ? listings
-    : listings.filter(l => l.crop_type === cropFilter)
+  // Apply crop filter + hide closed/accepted auctions by default
+  const filteredListings = listings
+    .filter(l => showClosed || !l.auction_status || l.auction_status === 'open')
+    .filter(l => cropFilter === 'all' || l.crop_type === cropFilter)
+
+  const closedCount = listings.filter(l => l.auction_status === 'closed' || l.auction_status === 'accepted').length
 
   return (
     <div className="min-h-screen gradient-mesh">
@@ -304,6 +307,19 @@ export default function Home() {
             <option value="200">Within 200 km</option>
             <option value="0">All India</option>
           </select>
+
+          {/* Closed auction toggle */}
+          {closedCount > 0 && (
+            <button
+              onClick={() => setShowClosed(v => !v)}
+              className={`px-3.5 py-2 rounded-xl text-xs font-semibold transition-all ${showClosed
+                ? 'bg-gray-900 text-white shadow-sm'
+                : 'bg-gray-100/80 text-gray-500 hover:bg-gray-200/80'
+              }`}
+            >
+              {showClosed ? '👁 Hiding closed' : `⏰ ${closedCount} closed`}
+            </button>
+          )}
         </div>
 
         {/* Listings */}

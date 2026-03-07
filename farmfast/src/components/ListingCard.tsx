@@ -9,7 +9,7 @@ import { RatingStars } from './RatingStars'
 import { formatTime, formatCurrency } from '@/lib/utils'
 import { MapPin, Package, Clock, TrendingUp, Navigation, Lock } from 'lucide-react'
 import { OfferModal } from './OfferModal'
-import { getCurrentUser } from '@/lib/auth'
+import { getCurrentUser, getBuyerProfile, BuyerProfile } from '@/lib/auth'
 
 interface ListingCardProps {
   listing: Listing & { distance?: number | null }
@@ -30,6 +30,7 @@ export function ListingCard({ listing }: ListingCardProps) {
   const [showOfferModal, setShowOfferModal] = useState(false)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [checkingAuth, setCheckingAuth] = useState(true)
+  const [buyerProfile, setBuyerProfile] = useState<BuyerProfile | null>(null)
   const [timeLeft, setTimeLeft] = useState<number>(0)
   const [auctionStatus, setAuctionStatus] = useState(listing.auction_status)
 
@@ -41,6 +42,10 @@ export function ListingCard({ listing }: ListingCardProps) {
     try {
       const user = await getCurrentUser()
       setIsAuthenticated(!!user)
+      if (user) {
+        const profile = await getBuyerProfile(user.id)
+        setBuyerProfile(profile)
+      }
     } catch {
       setIsAuthenticated(false)
     } finally {
@@ -257,6 +262,7 @@ export function ListingCard({ listing }: ListingCardProps) {
       {showOfferModal && (
         <OfferModal
           listing={listing}
+          buyerProfile={buyerProfile}
           onClose={() => setShowOfferModal(false)}
         />
       )}

@@ -2,11 +2,13 @@
 
 import { useState } from 'react'
 import { Listing } from '@/lib/supabase'
+import { BuyerProfile } from '@/lib/auth'
 import { formatCurrency } from '@/lib/utils'
 import { X } from 'lucide-react'
 
 interface OfferModalProps {
   listing: Listing
+  buyerProfile?: BuyerProfile | null
   onClose: () => void
 }
 
@@ -24,12 +26,16 @@ const CROP_EMOJIS: Record<string, string> = {
   'Banana': '🍌',
 }
 
-export function OfferModal({ listing, onClose }: OfferModalProps) {
+export function OfferModal({ listing, buyerProfile, onClose }: OfferModalProps) {
   const reservePrice = listing.reserve_price ?? listing.price_range_min
   const cropEmoji = CROP_EMOJIS[listing.crop_type] || '🌿'
 
-  const [buyerName, setBuyerName] = useState('')
-  const [buyerPhone, setBuyerPhone] = useState('')
+  // Pre-fill from profile if available
+  const profileName = buyerProfile?.business_name || buyerProfile?.name || ''
+  const profilePhone = buyerProfile?.phone || ''
+
+  const [buyerName, setBuyerName] = useState(profileName)
+  const [buyerPhone, setBuyerPhone] = useState(profilePhone)
   const [pricePerKg, setPricePerKg] = useState(reservePrice)
   const [pickupWindow, setPickupWindow] = useState(PICKUP_OPTIONS[0])
   const [message, setMessage] = useState('')
@@ -157,9 +163,13 @@ export function OfferModal({ listing, onClose }: OfferModalProps) {
                 required
                 value={buyerName}
                 onChange={(e) => setBuyerName(e.target.value)}
+                readOnly={!!profileName}
                 placeholder="e.g., Raj Traders"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent ${profileName ? 'bg-gray-50 text-gray-600 cursor-not-allowed' : ''}`}
               />
+              {profileName && (
+                <p className="text-[10px] text-gray-400 mt-0.5">Auto-filled from your profile</p>
+              )}
             </div>
 
             {/* Buyer phone */}
@@ -171,9 +181,13 @@ export function OfferModal({ listing, onClose }: OfferModalProps) {
                 type="tel"
                 value={buyerPhone}
                 onChange={(e) => setBuyerPhone(e.target.value)}
+                readOnly={!!profilePhone}
                 placeholder="+91 98765 43210"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent ${profilePhone ? 'bg-gray-50 text-gray-600 cursor-not-allowed' : ''}`}
               />
+              {profilePhone && (
+                <p className="text-[10px] text-gray-400 mt-0.5">Auto-filled from your profile</p>
+              )}
             </div>
 
             {/* Price per kg */}
