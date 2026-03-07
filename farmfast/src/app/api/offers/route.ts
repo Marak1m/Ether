@@ -5,7 +5,7 @@ import { sendWhatsAppMessage } from '@/lib/twilio'
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    const { listing_id, buyer_name, buyer_phone, price_per_kg, pickup_window, pickup_date, pickup_time, message } = body
+    const { listing_id, buyer_name, buyer_phone, buyer_id, price_per_kg, pickup_window, pickup_date, pickup_time, message } = body
 
     // Get listing details
     const { data: listing, error: listingError } = await supabase
@@ -42,6 +42,7 @@ export async function POST(req: NextRequest) {
         listing_id,
         buyer_name,
         buyer_phone,
+        buyer_id: buyer_id || null,
         price_per_kg,
         total_amount,
         pickup_time: resolvedPickupWindow,

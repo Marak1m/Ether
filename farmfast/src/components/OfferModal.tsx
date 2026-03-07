@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import ReactDOM from 'react-dom'
 import { Listing } from '@/lib/supabase'
 import { BuyerProfile } from '@/lib/auth'
 import { formatCurrency } from '@/lib/utils'
@@ -30,18 +31,29 @@ export function OfferModal({ listing, buyerProfile, onClose }: OfferModalProps) 
   const reservePrice = listing.reserve_price ?? listing.price_range_min
   const cropEmoji = CROP_EMOJIS[listing.crop_type] || '🌿'
 
-  // Pre-fill from profile if available
-  const profileName = buyerProfile?.business_name || buyerProfile?.name || ''
-  const profilePhone = buyerProfile?.phone || ''
+  // Portal: only render on client (avoid SSR document access)
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => { setMounted(true) }, [])
 
-  const [buyerName, setBuyerName] = useState(profileName)
-  const [buyerPhone, setBuyerPhone] = useState(profilePhone)
+  const [buyerName, setBuyerName] = useState('')
+  const [buyerPhone, setBuyerPhone] = useState('')
   const [pricePerKg, setPricePerKg] = useState(reservePrice)
   const [pickupWindow, setPickupWindow] = useState(PICKUP_OPTIONS[0])
   const [message, setMessage] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [success, setSuccess] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Populate name/phone from profile once it arrives (async prop)
+  useEffect(() => {
+    if (buyerProfile) {
+      setBuyerName(buyerProfile.business_name || buyerProfile.name || '')
+      setBuyerPhone(buyerProfile.phone || '')
+    }
+  }, [buyerProfile])
+
+  const profileName = !!(buyerProfile?.business_name || buyerProfile?.name)
+  const profilePhone = !!buyerProfile?.phone
 
   const totalAmount = pricePerKg * listing.quantity_kg
   const commission = totalAmount * 0.02
@@ -59,6 +71,7 @@ export function OfferModal({ listing, buyerProfile, onClose }: OfferModalProps) 
           listing_id: listing.id,
           buyer_name: buyerName,
           buyer_phone: buyerPhone || null,
+          buyer_id: buyerProfile?.id || null,
           price_per_kg: pricePerKg,
           pickup_window: pickupWindow,
           message: message || null
@@ -88,18 +101,18 @@ export function OfferModal({ listing, buyerProfile, onClose }: OfferModalProps) 
     }
   }
 
-  return (
-    // Change 5a: backdrop click closes modal
+  if (!mounted) return null
+
+  const modalContent = (
     <div
-      className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200"
+      className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[9999] p-4 animate-in fade-in duration-200"
       onClick={onClose}
     >
-      {/* Change 5a: card stops propagation; relative enables absolute X button */}
       <div
         className="bg-white rounded-2xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto relative"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Change 5b: X button absolutely positioned in top-right corner */}
+        {/* X button */}
         <button
           onClick={onClose}
           className="absolute top-3 right-3 z-10 text-gray-400 hover:text-gray-600 transition-colors hover:bg-gray-100 rounded-full p-1"
@@ -129,7 +142,6 @@ export function OfferModal({ listing, buyerProfile, onClose }: OfferModalProps) 
             {/* Listing info */}
             <div className="bg-gray-50 p-3 rounded-lg">
               <div className="flex items-center gap-3 mb-2">
-                {/* Change 5d: image null guard */}
                 {listing.image_url ? (
                   <img
                     src={listing.image_url}
@@ -163,9 +175,9 @@ export function OfferModal({ listing, buyerProfile, onClose }: OfferModalProps) 
                 required
                 value={buyerName}
                 onChange={(e) => setBuyerName(e.target.value)}
-                readOnly={!!profileName}
+                readOnly={profileName}
                 placeholder="e.g., Raj Traders"
-                className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent ${profileName ? 'bg-gray-50 text-gray-600 cursor-not-allowed' : ''}`}
+                className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent ${profileName ? 'bg-gray-100 text-gray-600 cursor-not-allowed' : ''}`}
               />
               {profileName && (
                 <p className="text-[10px] text-gray-400 mt-0.5">Auto-filled from your profile</p>
@@ -181,9 +193,9 @@ export function OfferModal({ listing, buyerProfile, onClose }: OfferModalProps) 
                 type="tel"
                 value={buyerPhone}
                 onChange={(e) => setBuyerPhone(e.target.value)}
-                readOnly={!!profilePhone}
+                readOnly={profilePhone}
                 placeholder="+91 98765 43210"
-                className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent ${profilePhone ? 'bg-gray-50 text-gray-600 cursor-not-allowed' : ''}`}
+                className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent ${profilePhone ? 'bg-gray-100 text-gray-600 cursor-not-allowed' : ''}`}
               />
               {profilePhone && (
                 <p className="text-[10px] text-gray-400 mt-0.5">Auto-filled from your profile</p>
@@ -213,7 +225,6 @@ export function OfferModal({ listing, buyerProfile, onClose }: OfferModalProps) 
                 onChange={(e) => setPricePerKg(parseFloat(e.target.value))}
                 className="w-full mt-2"
               />
-              {/* Change 5c: simplified — no mandi rate suffix */}
               {listing.reserve_price != null && (
                 <p className="text-xs text-orange-600 mt-1">
                   🔒 Minimum ₹{listing.reserve_price}/kg
@@ -284,4 +295,6 @@ export function OfferModal({ listing, buyerProfile, onClose }: OfferModalProps) 
       </div>
     </div>
   )
+
+  return ReactDOM.createPortal(modalContent, document.body)
 }

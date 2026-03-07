@@ -9,7 +9,7 @@ import { RatingStars } from './RatingStars'
 import { formatTime, formatCurrency } from '@/lib/utils'
 import { MapPin, Package, Clock, TrendingUp, Navigation, Lock } from 'lucide-react'
 import { OfferModal } from './OfferModal'
-import { getCurrentUser, getBuyerProfile, BuyerProfile } from '@/lib/auth'
+import { getCurrentUser, getBuyerProfileByEmail, BuyerProfile } from '@/lib/auth'
 
 interface ListingCardProps {
   listing: Listing & { distance?: number | null }
@@ -42,8 +42,8 @@ export function ListingCard({ listing }: ListingCardProps) {
     try {
       const user = await getCurrentUser()
       setIsAuthenticated(!!user)
-      if (user) {
-        const profile = await getBuyerProfile(user.id)
+      if (user?.email) {
+        const profile = await getBuyerProfileByEmail(user.email)
         setBuyerProfile(profile)
       }
     } catch {

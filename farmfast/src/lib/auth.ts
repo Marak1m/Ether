@@ -64,6 +64,22 @@ export async function getBuyerProfile(userId: string): Promise<BuyerProfile | nu
   return data
 }
 
+// Preferred lookup — buyers table is keyed by email, not always by auth user id
+export async function getBuyerProfileByEmail(email: string): Promise<BuyerProfile | null> {
+  const { data, error } = await supabase
+    .from('buyers')
+    .select('id, name, phone, email, address, pincode, business_name, latitude, longitude, created_at')
+    .eq('email', email)
+    .single()
+
+  if (error) {
+    console.error('Error fetching buyer profile by email:', error)
+    return null
+  }
+
+  return data
+}
+
 export async function createBuyerProfile(profile: Partial<BuyerProfile>) {
   const { data, error } = await supabase
     .from('buyers')
