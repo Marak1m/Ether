@@ -63,7 +63,9 @@ export async function gradeWithAgentTools(
   farmerDistrict: string,
   modelId = 'amazon.nova-lite-v1:0'
 ): Promise<GradeResult> {
+  // Strip data-URL prefix if present, then decode base64 → raw bytes
   const cleanBase64 = imageBase64.replace(/^data:image\/\w+;base64,/, '')
+  const imageBytes = Buffer.from(cleanBase64, 'base64')
 
   const systemPrompt = `You are an agricultural AI agent for FarmFast India.
 Step 1: Identify the crop and grade it A/B/C based on visual quality.
@@ -89,7 +91,8 @@ Grade A: <10% defects. Grade B: 10-30%. Grade C: >30%.`
         {
           image: {
             format: 'jpeg',
-            source: { bytes: cleanBase64 },
+            // Must be Uint8Array (Buffer extends Uint8Array) — NOT a base64 string
+            source: { bytes: imageBytes },
           },
         },
         { text: systemPrompt },

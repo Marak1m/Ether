@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Listing } from '@/lib/supabase'
 import { ListingCard } from '@/components/ListingCard'
 import { ListingsMap } from '@/components/ListingsMap'
-import { Leaf, Map, List, User, LogOut, Zap, TrendingUp, BarChart3, Search } from 'lucide-react'
+import { Leaf, Map, List, User, LogOut, Zap, TrendingUp, BarChart3, Search, MapPin } from 'lucide-react'
 import { getCurrentUser, signOut } from '@/lib/auth'
 import { realtimeService } from '@/lib/realtime'
 import Link from 'next/link'
@@ -13,9 +13,10 @@ import Link from 'next/link'
 export default function Home() {
   const router = useRouter()
   const [listings, setListings] = useState<Listing[]>([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [gradeFilter, setGradeFilter] = useState<'all' | 'A' | 'B' | 'C'>('all')
-  const [buyerLocation, setBuyerLocation] = useState<{ lat: number, lon: number } | null>(null)
+  const [buyerLocation, setBuyerLocation] = useState<{ lat: number; lon: number } | null>(null)
+  const [locationReady, setLocationReady] = useState(false)
   const [radius, setRadius] = useState(15)
   const [viewMode, setViewMode] = useState<'list' | 'map'>('list')
   const [user, setUser] = useState<any>(null)
@@ -24,6 +25,7 @@ export default function Home() {
   const [cropFilter, setCropFilter] = useState<string>('all')
   const [showClosed, setShowClosed] = useState(false)
 
+  // ── Auth check ──────────────────────────────────────────────────────────────
   useEffect(() => {
     checkAuth()
   }, [])
@@ -32,8 +34,7 @@ export default function Home() {
     try {
       const currentUser = await getCurrentUser()
       setUser(currentUser)
-    } catch (error) {
-      console.log('Not authenticated')
+    } catch {
       setUser(null)
     } finally {
       setCheckingAuth(false)
@@ -50,31 +51,44 @@ export default function Home() {
     }
   }
 
+  // ── Geolocation — must resolve before first fetch ───────────────────────────
   useEffect(() => {
-    const savedLocation = localStorage.getItem('buyerLocation')
-    if (savedLocation) {
-      setBuyerLocation(JSON.parse(savedLocation))
-    } else {
-      if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(
-          (position) => {
-            const location = {
-              lat: position.coords.latitude,
-              lon: position.coords.longitude
-            }
-            setBuyerLocation(location)
-            localStorage.setItem('buyerLocation', JSON.stringify(location))
-          },
-          () => {
-            const defaultLocation = { lat: 18.5204, lon: 73.8567 }
-            setBuyerLocation(defaultLocation)
-          }
-        )
-      }
+    // If we already have a saved location, use it immediately
+    const saved = localStorage.getItem('buyerLocation')
+    if (saved) {
+      try {
+        setBuyerLocation(JSON.parse(saved))
+      } catch {}
+      setLocationReady(true)
+      return
     }
+
+    // Otherwise ask the browser
+    if (!navigator.geolocation) {
+      // Geolocation not supported — show All India
+      setLocationReady(true)
+      return
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const loc = { lat: pos.coords.latitude, lon: pos.coords.longitude }
+        setBuyerLocation(loc)
+        localStorage.setItem('buyerLocation', JSON.stringify(loc))
+        setLocationReady(true)
+      },
+      () => {
+        // Permission denied or unavailable — fetch all India, don't set a fake location
+        setLocationReady(true)
+      },
+      { timeout: 8000 }
+    )
   }, [])
 
+  // ── Listings fetch — waits for locationReady ────────────────────────────────
   useEffect(() => {
+    if (!locationReady) return
+
     fetchListings()
 
     const channel = realtimeService.subscribeToListings((payload) => {
@@ -89,7 +103,8 @@ export default function Home() {
     return () => {
       realtimeService.unsubscribe()
     }
-  }, [gradeFilter, buyerLocation, radius])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locationReady, gradeFilter, buyerLocation, radius])
 
   const fetchListings = async () => {
     setLoading(true)
@@ -101,7 +116,6 @@ export default function Home() {
       }
 
       const response = await fetch(url)
-
       if (!response.ok) {
         console.error('API error:', response.status, response.statusText)
         setListings([])
@@ -118,16 +132,24 @@ export default function Home() {
     }
   }
 
-  // Get unique crop types for filter
+  // ── Derived state ───────────────────────────────────────────────────────────
   const cropTypes = Array.from(new Set(listings.map(l => l.crop_type)))
 
-  // Apply crop filter + hide closed/accepted auctions by default
   const filteredListings = listings
     .filter(l => showClosed || !l.auction_status || l.auction_status === 'open')
     .filter(l => cropFilter === 'all' || l.crop_type === cropFilter)
 
-  const closedCount = listings.filter(l => l.auction_status === 'closed' || l.auction_status === 'accepted').length
+  const closedCount = listings.filter(
+    l => l.auction_status === 'closed' || l.auction_status === 'accepted'
+  ).length
 
+  const radiusLabel = !buyerLocation
+    ? 'All India'
+    : radius > 0
+    ? `${radius}km radius`
+    : 'All India'
+
+  // ── Render ──────────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen gradient-mesh">
       {/* Header */}
@@ -203,11 +225,9 @@ export default function Home() {
               <div className="w-8 h-8 bg-gradient-to-br from-green-500 to-emerald-500 rounded-lg flex items-center justify-center mr-3">
                 <Zap className="w-4 h-4 text-white" />
               </div>
-              <div>
-                <p className="text-sm font-semibold text-green-700">
-                  New listing added! The page has been updated automatically.
-                </p>
-              </div>
+              <p className="text-sm font-semibold text-green-700">
+                New listing added! The page has been updated automatically.
+              </p>
             </div>
           </div>
         )}
@@ -215,15 +235,19 @@ export default function Home() {
         {/* Stats Cards */}
         <div className="grid grid-cols-3 gap-4 mb-6">
           {[
-            { label: 'Active Listings', value: filteredListings.length, color: 'from-green-500 to-emerald-500', bg: 'bg-green-50/80', textColor: 'text-green-600', icon: '📦' },
-            { label: 'Total Quantity', value: `${filteredListings.reduce((a, l) => a + l.quantity_kg, 0).toLocaleString()} kg`, color: 'from-blue-500 to-indigo-500', bg: 'bg-blue-50/80', textColor: 'text-blue-600', icon: '⚖️' },
+            { label: 'Active Listings', value: filteredListings.length, color: 'from-green-500 to-emerald-500', textColor: 'text-green-600', icon: '📦' },
+            { label: 'Total Quantity', value: `${filteredListings.reduce((a, l) => a + l.quantity_kg, 0).toLocaleString()} kg`, color: 'from-blue-500 to-indigo-500', textColor: 'text-blue-600', icon: '⚖️' },
             {
-              label: 'Avg Price Range', value: filteredListings.length > 0
+              label: 'Avg Price Range',
+              value: filteredListings.length > 0
                 ? `₹${Math.round(filteredListings.reduce((a, l) => a + l.price_range_min, 0) / filteredListings.length)}-${Math.round(filteredListings.reduce((a, l) => a + l.price_range_max, 0) / filteredListings.length)}/kg`
-                : '—', color: 'from-violet-500 to-purple-500', bg: 'bg-violet-50/80', textColor: 'text-violet-600', icon: '💰'
+                : '—',
+              color: 'from-violet-500 to-purple-500',
+              textColor: 'text-violet-600',
+              icon: '💰',
             },
           ].map((stat, i) => (
-            <div key={stat.label} className={`glass-strong rounded-2xl p-5 border border-gray-100/50 card-glow stagger-item`} style={{ animationDelay: `${i * 0.1}s` }}>
+            <div key={stat.label} className="glass-strong rounded-2xl p-5 border border-gray-100/50 card-glow stagger-item" style={{ animationDelay: `${i * 0.1}s` }}>
               <div className="flex items-center justify-between mb-3">
                 <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">{stat.label}</span>
                 <span className="text-2xl">{stat.icon}</span>
@@ -239,20 +263,14 @@ export default function Home() {
           <div className="flex items-center gap-0.5 bg-gray-100/80 p-1 rounded-xl">
             <button
               onClick={() => setViewMode('list')}
-              className={`px-3 py-2 rounded-lg text-xs font-semibold transition-all ${viewMode === 'list'
-                ? 'bg-white text-gray-900 shadow-sm'
-                : 'text-gray-500 hover:text-gray-900'
-                }`}
+              className={`px-3 py-2 rounded-lg text-xs font-semibold transition-all ${viewMode === 'list' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}
             >
               <List className="w-3.5 h-3.5 inline mr-1" />
               List
             </button>
             <button
               onClick={() => setViewMode('map')}
-              className={`px-3 py-2 rounded-lg text-xs font-semibold transition-all ${viewMode === 'map'
-                ? 'bg-white text-gray-900 shadow-sm'
-                : 'text-gray-500 hover:text-gray-900'
-                }`}
+              className={`px-3 py-2 rounded-lg text-xs font-semibold transition-all ${viewMode === 'map' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}
             >
               <Map className="w-3.5 h-3.5 inline mr-1" />
               Map
@@ -265,13 +283,14 @@ export default function Home() {
               <button
                 key={grade}
                 onClick={() => setGradeFilter(grade)}
-                className={`px-3.5 py-2 rounded-xl text-xs font-semibold transition-all ${gradeFilter === grade
-                  ? grade === 'A' ? 'bg-green-100 text-green-700 shadow-sm'
-                    : grade === 'B' ? 'bg-amber-100 text-amber-700 shadow-sm'
+                className={`px-3.5 py-2 rounded-xl text-xs font-semibold transition-all ${
+                  gradeFilter === grade
+                    ? grade === 'A' ? 'bg-green-100 text-green-700 shadow-sm'
+                      : grade === 'B' ? 'bg-amber-100 text-amber-700 shadow-sm'
                       : grade === 'C' ? 'bg-red-100 text-red-700 shadow-sm'
-                        : 'bg-gray-900 text-white shadow-sm'
-                  : 'bg-gray-100/80 text-gray-500 hover:bg-gray-200/80'
-                  }`}
+                      : 'bg-gray-900 text-white shadow-sm'
+                    : 'bg-gray-100/80 text-gray-500 hover:bg-gray-200/80'
+                }`}
               >
                 {grade === 'all' ? 'All Grades' : `Grade ${grade}`}
               </button>
@@ -292,29 +311,35 @@ export default function Home() {
             </select>
           )}
 
-          {/* Radius selector */}
-          <select
-            value={radius}
-            onChange={(e) => setRadius(parseInt(e.target.value))}
-            className="px-3 py-2 bg-gray-100/80 border-0 rounded-xl text-xs font-semibold text-gray-600 focus:ring-2 focus:ring-green-500 focus:ring-offset-0"
-          >
-            <option value="5">Within 5 km</option>
-            <option value="10">Within 10 km</option>
-            <option value="15">Within 15 km</option>
-            <option value="20">Within 20 km</option>
-            <option value="50">Within 50 km</option>
-            <option value="100">Within 100 km</option>
-            <option value="200">Within 200 km</option>
-            <option value="0">All India</option>
-          </select>
+          {/* Radius selector — disabled + labelled "All India" when no location */}
+          {buyerLocation ? (
+            <select
+              value={radius}
+              onChange={(e) => setRadius(parseInt(e.target.value))}
+              className="px-3 py-2 bg-gray-100/80 border-0 rounded-xl text-xs font-semibold text-gray-600 focus:ring-2 focus:ring-green-500 focus:ring-offset-0"
+            >
+              <option value="5">Within 5 km</option>
+              <option value="10">Within 10 km</option>
+              <option value="15">Within 15 km</option>
+              <option value="20">Within 20 km</option>
+              <option value="50">Within 50 km</option>
+              <option value="100">Within 100 km</option>
+              <option value="200">Within 200 km</option>
+              <option value="0">All India</option>
+            </select>
+          ) : locationReady ? (
+            <span className="flex items-center gap-1.5 px-3 py-2 bg-gray-100/80 rounded-xl text-xs font-semibold text-gray-400">
+              <MapPin className="w-3 h-3" />
+              All India
+            </span>
+          ) : null}
 
           {/* Closed auction toggle */}
           {closedCount > 0 && (
             <button
               onClick={() => setShowClosed(v => !v)}
-              className={`px-3.5 py-2 rounded-xl text-xs font-semibold transition-all ${showClosed
-                ? 'bg-gray-900 text-white shadow-sm'
-                : 'bg-gray-100/80 text-gray-500 hover:bg-gray-200/80'
+              className={`px-3.5 py-2 rounded-xl text-xs font-semibold transition-all ${
+                showClosed ? 'bg-gray-900 text-white shadow-sm' : 'bg-gray-100/80 text-gray-500 hover:bg-gray-200/80'
               }`}
             >
               {showClosed ? '👁 Hiding closed' : `⏰ ${closedCount} closed`}
@@ -326,12 +351,21 @@ export default function Home() {
         <div>
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-bold text-gray-900">
-              Available Produce {buyerLocation && <span className="text-gray-400 font-normal text-sm">({radius > 0 ? `${radius}km radius` : 'All India'})</span>}
+              Available Produce{' '}
+              {locationReady && (
+                <span className="text-gray-400 font-normal text-sm">({radiusLabel})</span>
+              )}
             </h2>
-            <span className="text-xs text-gray-400 font-medium">{filteredListings.length} results</span>
+            <span className="text-xs text-gray-400 font-medium">{locationReady ? `${filteredListings.length} results` : ''}</span>
           </div>
 
-          {loading ? (
+          {/* Location detecting spinner — shown before any fetch fires */}
+          {!locationReady ? (
+            <div className="flex flex-col items-center justify-center py-20 gap-4">
+              <div className="w-8 h-8 border-2 border-green-500 border-t-transparent rounded-full animate-spin" />
+              <p className="text-sm text-gray-500 font-medium">Detecting your location…</p>
+            </div>
+          ) : loading ? (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {[1, 2, 3, 4].map(i => (
                 <div key={i} className="glass-strong rounded-2xl p-5 border border-gray-100/50 animate-pulse">
@@ -354,13 +388,12 @@ export default function Home() {
                 <Search className="w-8 h-8 text-gray-300" />
               </div>
               <p className="text-gray-600 font-semibold">No active listings found</p>
-              <p className="text-sm text-gray-400 mt-1">Try adjusting your filters or increasing the search radius</p>
+              <p className="text-sm text-gray-400 mt-1">
+                {buyerLocation ? 'Try adjusting your filters or increasing the search radius' : 'No active listings at the moment'}
+              </p>
             </div>
           ) : viewMode === 'map' ? (
-            <ListingsMap
-              listings={filteredListings}
-              buyerLocation={buyerLocation}
-            />
+            <ListingsMap listings={filteredListings} buyerLocation={buyerLocation} />
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {filteredListings.map((listing, i) => (
