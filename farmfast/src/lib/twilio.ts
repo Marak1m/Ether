@@ -27,7 +27,9 @@ export async function sendWhatsAppMessage(
     return message
   } catch (error) {
     console.error('Twilio send error:', error)
-    throw error
+    // Do NOT rethrow — propagating the error causes the webhook handler to return HTTP 500,
+    // which means Twilio never gets a 200 and subsequent messages also fail silently.
+    return null
   }
 }
 
