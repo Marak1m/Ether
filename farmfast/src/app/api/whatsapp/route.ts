@@ -631,7 +631,22 @@ export async function POST(req: NextRequest) {
         .order('price_per_kg', { ascending: false })
 
       if (!offers || offers.length === 0) {
-        await sendWhatsAppMessage(from, '❌ अभी कोई पेंडिंग ऑफर नहीं है।\n\n⏳ नए ऑफर का इंतजार करें।')
+        // Check if listing was already accepted (farmer stuck after a failed WhatsApp send)
+        const { data: currentListing } = await supabase
+          .from('listings')
+          .select('auction_status')
+          .eq('id', listingId)
+          .single()
+        if (currentListing?.auction_status === 'accepted') {
+          // Session wasn't advanced to awaiting_handover_confirmation — fix it now
+          await supabase
+            .from('chat_sessions')
+            .update({ conversation_state: 'awaiting_handover_confirmation', last_message_at: new Date().toISOString() })
+            .eq('farmer_phone', from)
+          await sendWhatsAppMessage(from, '✅ आपने पहले ही एक ऑफर स्वीकार कर लिया है।\n📦 माल देने के बाद "माल दे दिया" लिखकर भेजें। 🎉')
+        } else {
+          await sendWhatsAppMessage(from, '❌ अभी कोई पेंडिंग ऑफर नहीं है।\n\n⏳ नए ऑफर का इंतजार करें।')
+        }
         return NextResponse.json({ success: true })
       }
 
@@ -658,7 +673,7 @@ export async function POST(req: NextRequest) {
       }
 
       if (selectedOffer) {
-        // Accept the selected offer and mark auction as accepted
+        // 1. DB updates — accept selected, reject others
         await supabase
           .from('offers')
           .update({ status: 'accepted' })
@@ -669,7 +684,6 @@ export async function POST(req: NextRequest) {
           .update({ auction_status: 'accepted' })
           .eq('id', listingId)
 
-        // Reject other offers
         const otherOfferIds = offers.filter(o => o.id !== selectedOffer!.id).map(o => o.id)
         if (otherOfferIds.length > 0) {
           await supabase
@@ -678,15 +692,29 @@ export async function POST(req: NextRequest) {
             .in('id', otherOfferIds)
         }
 
-        // Notify farmer (Hindi)
-        await sendWhatsAppMessage(
-          from,
-          `✅ ऑफर स्वीकार हुआ! खरीददार: ${selectedOffer.buyer_name} | पिकअप: ${selectedOffer.pickup_window || selectedOffer.pickup_time || 'जल्द'}\n` +
-          `कुल: ₹${selectedOffer.total_amount} | पैसे सुरक्षित हैं — माल देने पर तुरंत मिलेंगे।\n\n` +
-          `माल देने के बाद "माल दे दिया" लिखकर भेजें। 🎉`
-        )
+        // 2. Advance session state FIRST — so even if WhatsApp fails below,
+        //    the farmer's next message lands in awaiting_handover_confirmation
+        await supabase
+          .from('chat_sessions')
+          .update({
+            conversation_state: 'awaiting_handover_confirmation',
+            last_message_at: new Date().toISOString()
+          })
+          .eq('farmer_phone', from)
 
-        // Notify buyer (English) if phone available
+        // 3. Notify farmer (Hindi) — wrapped so a Twilio error doesn't crash the handler
+        try {
+          await sendWhatsAppMessage(
+            from,
+            `✅ ऑफर स्वीकार हुआ! खरीददार: ${selectedOffer.buyer_name} | पिकअप: ${selectedOffer.pickup_window || selectedOffer.pickup_time || 'जल्द'}\n` +
+            `कुल: ₹${selectedOffer.total_amount} | पैसे सुरक्षित हैं — माल देने पर तुरंत मिलेंगे।\n\n` +
+            `माल देने के बाद "माल दे दिया" लिखकर भेजें। 🎉`
+          )
+        } catch (e) {
+          console.error('Farmer acceptance WhatsApp notification failed:', e)
+        }
+
+        // 4. Notify buyer (English) if phone available — best-effort
         if (selectedOffer.buyer_phone) {
           const listing = await supabase
             .from('listings')
@@ -703,14 +731,6 @@ export async function POST(req: NextRequest) {
             `Payment in escrow — released on handover confirmation.`
           ).catch(() => {}) // best-effort
         }
-
-        await supabase
-          .from('chat_sessions')
-          .update({
-            conversation_state: 'awaiting_handover_confirmation',
-            last_message_at: new Date().toISOString()
-          })
-          .eq('farmer_phone', from)
 
         return NextResponse.json({ success: true })
       }

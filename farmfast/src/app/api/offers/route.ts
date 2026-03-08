@@ -115,20 +115,29 @@ export async function POST(req: NextRequest) {
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const listing_id = searchParams.get('listing_id')
+  const buyer_id = searchParams.get('buyer_id')
 
-  if (!listing_id) {
-    return NextResponse.json({ error: 'listing_id required' }, { status: 400 })
+  // Existing: fetch offers for a specific listing
+  if (listing_id) {
+    const { data, error } = await supabase
+      .from('offers')
+      .select('*')
+      .eq('listing_id', listing_id)
+      .order('price_per_kg', { ascending: false })
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json(data)
   }
 
-  const { data, error } = await supabase
-    .from('offers')
-    .select('*')
-    .eq('listing_id', listing_id)
-    .order('price_per_kg', { ascending: false })
-
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+  // New: fetch all bids placed by a buyer, with listing details embedded
+  if (buyer_id) {
+    const { data, error } = await supabase
+      .from('offers')
+      .select('*, listings(crop_type, quantity_kg, location, image_url, farmer_phone, price_range_min, price_range_max)')
+      .eq('buyer_id', buyer_id)
+      .order('created_at', { ascending: false })
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json(data ?? [])
   }
 
-  return NextResponse.json(data)
+  return NextResponse.json({ error: 'listing_id or buyer_id required' }, { status: 400 })
 }

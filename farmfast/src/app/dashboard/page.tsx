@@ -5,8 +5,9 @@ import { useRouter } from 'next/navigation'
 import { Listing } from '@/lib/supabase'
 import { ListingCard } from '@/components/ListingCard'
 import { ListingsMap } from '@/components/ListingsMap'
-import { Leaf, Map, List, User, LogOut, Zap, TrendingUp, BarChart3, Search, MapPin } from 'lucide-react'
-import { getCurrentUser, signOut } from '@/lib/auth'
+import { Leaf, Map, List, User, LogOut, Zap, TrendingUp, BarChart3, Search, MapPin, Briefcase } from 'lucide-react'
+import { getCurrentUser, signOut, getBuyerProfileByEmail, BuyerProfile } from '@/lib/auth'
+import { BidCard } from '@/components/BidCard'
 import { realtimeService } from '@/lib/realtime'
 import Link from 'next/link'
 
@@ -24,6 +25,10 @@ export default function Home() {
   const [newListingAlert, setNewListingAlert] = useState(false)
   const [cropFilter, setCropFilter] = useState<string>('all')
   const [showClosed, setShowClosed] = useState(false)
+  const [buyerProfile, setBuyerProfile] = useState<BuyerProfile | null>(null)
+  const [activeTab, setActiveTab] = useState<'browse' | 'my-bids'>('browse')
+  const [myBids, setMyBids] = useState<any[]>([])
+  const [bidsLoading, setBidsLoading] = useState(false)
 
   // ── Auth check ──────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -34,6 +39,18 @@ export default function Home() {
     try {
       const currentUser = await getCurrentUser()
       setUser(currentUser)
+      if (currentUser?.email) {
+        const profile = await getBuyerProfileByEmail(currentUser.email)
+        setBuyerProfile(profile)
+        if (profile?.id) {
+          // Pre-fetch so My Bids count badge shows immediately (before the tab is clicked)
+          try {
+            const res = await fetch(`/api/offers?buyer_id=${profile.id}`)
+            const data = await res.json()
+            setMyBids(Array.isArray(data) ? data : [])
+          } catch { /* ignore — bids will load on tab click */ }
+        }
+      }
     } catch {
       setUser(null)
     } finally {
@@ -131,6 +148,22 @@ export default function Home() {
       setLoading(false)
     }
   }
+
+  const fetchMyBids = async () => {
+    if (!buyerProfile?.id) return
+    setBidsLoading(true)
+    try {
+      const res = await fetch(`/api/offers?buyer_id=${buyerProfile.id}`)
+      const data = await res.json()
+      setMyBids(Array.isArray(data) ? data : [])
+    } catch { setMyBids([]) } finally { setBidsLoading(false) }
+  }
+
+  // Re-fetch bids whenever the My Bids tab becomes active
+  useEffect(() => {
+    if (activeTab === 'my-bids' && buyerProfile?.id) fetchMyBids()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, buyerProfile?.id])
 
   // ── Derived state ───────────────────────────────────────────────────────────
   const cropTypes = Array.from(new Set(listings.map(l => l.crop_type)))
@@ -257,8 +290,36 @@ export default function Home() {
           ))}
         </div>
 
-        {/* Filters Row */}
-        <div className="flex flex-wrap items-center gap-3 mb-6">
+        {/* Tab Bar — only shown when authenticated */}
+        {user && !checkingAuth && (
+          <div className="flex items-center gap-0 mb-5 border-b border-gray-200/80">
+            {([
+              { id: 'browse' as const, label: 'Browse Listings', icon: <List className="w-4 h-4" /> },
+              { id: 'my-bids' as const, label: 'My Bids', icon: <Briefcase className="w-4 h-4" />, count: myBids.length },
+            ]).map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex items-center gap-1.5 px-5 py-2.5 text-sm font-semibold border-b-2 transition-all -mb-px ${
+                  activeTab === tab.id
+                    ? 'border-green-500 text-green-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                {tab.icon}
+                {tab.label}
+                {'count' in tab && tab.count > 0 && (
+                  <span className="bg-green-100 text-green-700 text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                    {tab.count}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Filters Row — hidden on My Bids tab */}
+        <div className={`flex flex-wrap items-center gap-3 mb-6 ${activeTab === 'my-bids' ? 'hidden' : ''}`}>
           {/* View Mode Toggle */}
           <div className="flex items-center gap-0.5 bg-gray-100/80 p-1 rounded-xl">
             <button
@@ -347,63 +408,107 @@ export default function Home() {
           )}
         </div>
 
-        {/* Listings */}
-        <div>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-bold text-gray-900">
-              Available Produce{' '}
-              {locationReady && (
-                <span className="text-gray-400 font-normal text-sm">({radiusLabel})</span>
-              )}
-            </h2>
-            <span className="text-xs text-gray-400 font-medium">{locationReady ? `${filteredListings.length} results` : ''}</span>
-          </div>
-
-          {/* Location detecting spinner — shown before any fetch fires */}
-          {!locationReady ? (
-            <div className="flex flex-col items-center justify-center py-20 gap-4">
-              <div className="w-8 h-8 border-2 border-green-500 border-t-transparent rounded-full animate-spin" />
-              <p className="text-sm text-gray-500 font-medium">Detecting your location…</p>
+        {/* My Bids tab content */}
+        {activeTab === 'my-bids' ? (
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold text-gray-900">My Bids</h2>
+              <button
+                onClick={fetchMyBids}
+                disabled={bidsLoading}
+                className="text-xs text-gray-400 hover:text-gray-600 transition-colors disabled:opacity-50"
+              >
+                {bidsLoading ? 'Refreshing…' : 'Refresh'}
+              </button>
             </div>
-          ) : loading ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {[1, 2, 3, 4].map(i => (
-                <div key={i} className="glass-strong rounded-2xl p-5 border border-gray-100/50 animate-pulse">
-                  <div className="flex gap-4">
-                    <div className="w-28 h-28 skeleton rounded-xl" />
-                    <div className="flex-1 space-y-3">
-                      <div className="skeleton h-5 w-24" />
-                      <div className="skeleton h-4 w-32" />
-                      <div className="skeleton h-3 w-40" />
-                      <div className="skeleton h-3 w-36" />
-                      <div className="skeleton h-10 w-full mt-2" />
+
+            {bidsLoading ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {[1, 2].map(i => (
+                  <div key={i} className="glass-strong rounded-2xl p-5 border border-gray-100/50 animate-pulse h-44" />
+                ))}
+              </div>
+            ) : myBids.length === 0 ? (
+              <div className="text-center py-16 glass-strong rounded-2xl border border-gray-100/50">
+                <div className="text-5xl mb-4">💼</div>
+                <p className="text-gray-600 font-semibold">No bids yet</p>
+                <p className="text-sm text-gray-400 mt-1">Browse listings and submit your first offer!</p>
+                <button
+                  onClick={() => setActiveTab('browse')}
+                  className="mt-4 px-5 py-2 bg-gradient-to-r from-green-600 to-emerald-500 text-white text-sm font-semibold rounded-xl shadow-md hover:shadow-lg transition-all"
+                >
+                  Browse Listings
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {myBids.map((bid, i) => (
+                  <div key={bid.id} className="stagger-item" style={{ animationDelay: `${i * 0.05}s` }}>
+                    <BidCard bid={bid} />
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
+          /* Browse tab — existing listings view */
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold text-gray-900">
+                Available Produce{' '}
+                {locationReady && (
+                  <span className="text-gray-400 font-normal text-sm">({radiusLabel})</span>
+                )}
+              </h2>
+              <span className="text-xs text-gray-400 font-medium">{locationReady ? `${filteredListings.length} results` : ''}</span>
+            </div>
+
+            {/* Location detecting spinner — shown before any fetch fires */}
+            {!locationReady ? (
+              <div className="flex flex-col items-center justify-center py-20 gap-4">
+                <div className="w-8 h-8 border-2 border-green-500 border-t-transparent rounded-full animate-spin" />
+                <p className="text-sm text-gray-500 font-medium">Detecting your location…</p>
+              </div>
+            ) : loading ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {[1, 2, 3, 4].map(i => (
+                  <div key={i} className="glass-strong rounded-2xl p-5 border border-gray-100/50 animate-pulse">
+                    <div className="flex gap-4">
+                      <div className="w-28 h-28 skeleton rounded-xl" />
+                      <div className="flex-1 space-y-3">
+                        <div className="skeleton h-5 w-24" />
+                        <div className="skeleton h-4 w-32" />
+                        <div className="skeleton h-3 w-40" />
+                        <div className="skeleton h-3 w-36" />
+                        <div className="skeleton h-10 w-full mt-2" />
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          ) : filteredListings.length === 0 ? (
-            <div className="text-center py-16 glass-strong rounded-2xl border border-gray-100/50">
-              <div className="w-16 h-16 bg-gray-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                <Search className="w-8 h-8 text-gray-300" />
+                ))}
               </div>
-              <p className="text-gray-600 font-semibold">No active listings found</p>
-              <p className="text-sm text-gray-400 mt-1">
-                {buyerLocation ? 'Try adjusting your filters or increasing the search radius' : 'No active listings at the moment'}
-              </p>
-            </div>
-          ) : viewMode === 'map' ? (
-            <ListingsMap listings={filteredListings} buyerLocation={buyerLocation} />
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {filteredListings.map((listing, i) => (
-                <div key={listing.id} className="stagger-item" style={{ animationDelay: `${i * 0.05}s` }}>
-                  <ListingCard listing={listing} />
+            ) : filteredListings.length === 0 ? (
+              <div className="text-center py-16 glass-strong rounded-2xl border border-gray-100/50">
+                <div className="w-16 h-16 bg-gray-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                  <Search className="w-8 h-8 text-gray-300" />
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
+                <p className="text-gray-600 font-semibold">No active listings found</p>
+                <p className="text-sm text-gray-400 mt-1">
+                  {buyerLocation ? 'Try adjusting your filters or increasing the search radius' : 'No active listings at the moment'}
+                </p>
+              </div>
+            ) : viewMode === 'map' ? (
+              <ListingsMap listings={filteredListings} buyerLocation={buyerLocation} />
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {filteredListings.map((listing, i) => (
+                  <div key={listing.id} className="stagger-item" style={{ animationDelay: `${i * 0.05}s` }}>
+                    <ListingCard listing={listing} />
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </main>
 
       {/* Footer */}
