@@ -308,7 +308,7 @@ export default function Home() {
               >
                 {tab.icon}
                 {tab.label}
-                {'count' in tab && tab.count > 0 && (
+                {(tab.count ?? 0) > 0 && (
                   <span className="bg-green-100 text-green-700 text-[10px] font-bold px-1.5 py-0.5 rounded-full">
                     {tab.count}
                   </span>
