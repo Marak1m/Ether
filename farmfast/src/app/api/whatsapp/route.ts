@@ -32,6 +32,16 @@ function isSessionStale(session: any): boolean {
   return (now - lastMessage) > STALE_THRESHOLD_MS
 }
 
+// Extract city name from Nominatim display_name
+// "131023, Sonipat, Haryana District, Haryana, India" → "Sonipat"
+function extractCityFromDisplayName(displayName: string): string {
+  const parts = displayName.split(',').map(s => s.trim())
+  if (/^\d{5,6}$/.test(parts[0])) {
+    return parts[1] || displayName
+  }
+  return parts[0]
+}
+
 export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData()
@@ -233,7 +243,7 @@ export async function POST(req: NextRequest) {
             phone: from,
             name: farmerName,
             full_address: farmerAddress,
-            location: coords.display_name || 'India',
+            location: extractCityFromDisplayName(coords.display_name || 'India'),
             pincode: pincode,
             latitude: coords.lat,
             longitude: coords.lon
@@ -401,13 +411,14 @@ export async function POST(req: NextRequest) {
       try {
         const coords = await getCoordinatesFromPincode(pincode)
 
+        const city = extractCityFromDisplayName(coords.display_name || 'India')
         await supabase
           .from('listings')
           .update({
             pincode: pincode,
             latitude: coords.lat,
             longitude: coords.lon,
-            location: coords.display_name || 'India'
+            location: city
           })
           .eq('id', session.current_listing_id)
 
@@ -421,7 +432,7 @@ export async function POST(req: NextRequest) {
 
         await sendWhatsAppMessage(
           from,
-          `✅ स्थान सहेजा गया: ${coords.display_name}\n\n📦 अब कितने किलो बेचना है? कृपया संख्या भेजें (जैसे: 500)`
+          `✅ स्थान सहेजा गया: ${city}\n\n📦 अब कितने किलो बेचना है? कृपया संख्या भेजें (जैसे: 500)`
         )
       } catch (error) {
         console.error('Geocoding error:', error)
@@ -528,13 +539,94 @@ export async function POST(req: NextRequest) {
       // Any other message in listing_active — fall through to general handlers below
     }
 
+    // === Global keyword handlers — accessible from any state ===
+
+    // Global "offers"/"ऑफर" — look up latest open listing, show offers, enter reviewing_offers
+    if ((lowerBody === 'offers' || lowerBody === 'ऑफर') && farmer) {
+      const { data: latestListing } = await supabase
+        .from('listings')
+        .select('id')
+        .eq('farmer_phone', from)
+        .eq('auction_status', 'open')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single()
+
+      if (!latestListing) {
+        await sendWhatsAppMessage(from, '❌ कोई सक्रिय नीलामी नहीं है।\n\nनई लिस्टिंग बनाने के लिए फसल की फोटो भेजें। 📸')
+        return NextResponse.json({ success: true })
+      }
+
+      const { data: globalOffers } = await supabase
+        .from('offers')
+        .select('*')
+        .eq('listing_id', latestListing.id)
+        .eq('status', 'pending')
+        .order('price_per_kg', { ascending: false })
+
+      await supabase
+        .from('chat_sessions')
+        .update({
+          current_listing_id: latestListing.id,
+          conversation_state: 'reviewing_offers',
+          last_message_at: new Date().toISOString()
+        })
+        .eq('farmer_phone', from)
+
+      if (!globalOffers || globalOffers.length === 0) {
+        await sendWhatsAppMessage(from, '❌ अभी कोई पेंडिंग ऑफर नहीं है।\n\n⏳ नए ऑफर का इंतजार करें।')
+        return NextResponse.json({ success: true })
+      }
+
+      let offerList = '📋 *आपके ऑफर:*\n\n'
+      globalOffers.forEach((offer, index) => {
+        offerList += `*${index + 1}.* ${offer.buyer_name}\n   💰 ₹${offer.price_per_kg}/किलो (कुल ₹${offer.total_amount})\n   🚚 ${offer.pickup_window || offer.pickup_time || 'जल्द'}\n\n`
+      })
+      offerList += '✅ ऑफर स्वीकार करने के लिए नंबर भेजें (जैसे: 1, 2, 3)'
+      await sendWhatsAppMessage(from, offerList)
+      return NextResponse.json({ success: true })
+    }
+
+    // Global menu — intercepts before reviewing_offers so farmer can always exit to menu
+    if ((lowerBody.includes('menu') || lowerBody.includes('मेनू')) && farmer) {
+      const menuMsg = `📋 *FarmFast मेनू*\n\n*प्रोफाइल देखें:*\n"प्रोफाइल" या "profile" लिखें\n\n*प्रोफाइल अपडेट करें:*\n• नाम बदलें: "नाम बदलो [नया नाम]"\n• पता बदलें: "पता बदलो [नया पता]"\n• पिनकोड बदलें: "पिनकोड बदलो [नया पिनकोड]"\n\n*उदाहरण:*\nनाम बदलो राज कुमार\nपता बदलो गाँव खेड़ा, पुणे, महाराष्ट्र\nपिनकोड बदलो 411001\n\n*फसल बेचने के लिए:*\nफोटो भेजें 📸`
+      await sendWhatsAppMessage(from, menuMsg)
+      return NextResponse.json({ success: true })
+    }
+
     // Handle offer acceptance
     if (session?.conversation_state === 'reviewing_offers') {
+      // Bug 3 safety: if current_listing_id is null, re-fetch latest open listing
+      let listingId = session.current_listing_id
+      if (!listingId) {
+        const { data: latestListing } = await supabase
+          .from('listings')
+          .select('id')
+          .eq('farmer_phone', from)
+          .eq('auction_status', 'open')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .single()
+        if (latestListing) {
+          listingId = latestListing.id
+          await supabase
+            .from('chat_sessions')
+            .update({ current_listing_id: listingId, last_message_at: new Date().toISOString() })
+            .eq('farmer_phone', from)
+          session = { ...session, current_listing_id: listingId }
+        }
+      }
+
+      if (!listingId) {
+        await sendWhatsAppMessage(from, '❌ कोई सक्रिय नीलामी नहीं है।\n\nनई लिस्टिंग बनाने के लिए फसल की फोटो भेजें। 📸')
+        return NextResponse.json({ success: true })
+      }
+
       // Fetch all pending offers for this listing
       const { data: offers } = await supabase
         .from('offers')
         .select('*')
-        .eq('listing_id', session.current_listing_id)
+        .eq('listing_id', listingId)
         .eq('status', 'pending')
         .order('price_per_kg', { ascending: false })
 
@@ -575,7 +667,7 @@ export async function POST(req: NextRequest) {
         await supabase
           .from('listings')
           .update({ auction_status: 'accepted' })
-          .eq('id', session.current_listing_id)
+          .eq('id', listingId)
 
         // Reject other offers
         const otherOfferIds = offers.filter(o => o.id !== selectedOffer!.id).map(o => o.id)
@@ -599,7 +691,7 @@ export async function POST(req: NextRequest) {
           const listing = await supabase
             .from('listings')
             .select('quantity_kg')
-            .eq('id', session.current_listing_id)
+            .eq('id', listingId)
             .single()
           const qty = listing.data?.quantity_kg ?? 0
           const total = Math.round(selectedOffer.price_per_kg * qty)
@@ -762,18 +854,19 @@ export async function POST(req: NextRequest) {
       try {
         const coords = await getCoordinatesFromPincode(newPincode)
 
+        const newCity = extractCityFromDisplayName(coords.display_name) || farmer.location
         await supabase
           .from('farmers')
           .update({
             pincode: newPincode,
             latitude: coords.lat,
             longitude: coords.lon,
-            location: coords.display_name || farmer.location,
+            location: newCity,
             updated_at: new Date().toISOString()
           })
           .eq('phone', from)
 
-        await sendWhatsAppMessage(from, `✅ पिनकोड अपडेट हो गया!\n\n📮 नया पिनकोड: ${newPincode}\n📍 स्थान: ${coords.display_name}`)
+        await sendWhatsAppMessage(from, `✅ पिनकोड अपडेट हो गया!\n\n📮 नया पिनकोड: ${newPincode}\n📍 स्थान: ${newCity}`)
       } catch {
         await sendWhatsAppMessage(from, '❌ पिनकोड नहीं मिला। कृपया सही पिनकोड बताएं।')
       }

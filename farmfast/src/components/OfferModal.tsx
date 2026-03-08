@@ -5,7 +5,18 @@ import ReactDOM from 'react-dom'
 import { Listing } from '@/lib/supabase'
 import { BuyerProfile } from '@/lib/auth'
 import { formatCurrency } from '@/lib/utils'
-import { X } from 'lucide-react'
+import { X, MapPin } from 'lucide-react'
+
+function formatLocationDisplay(loc: string | null | undefined): string {
+  if (!loc) return 'India'
+  const parts = loc.split(',').map(s => s.trim())
+  if (!/^\d{5,6}$/.test(parts[0])) return loc
+  const pin = parts[0]
+  const meaningful = parts.slice(1).filter(p => !/district/i.test(p) && p.toLowerCase() !== 'india')
+  if (meaningful.length >= 2) return `${meaningful[0]}, ${meaningful[1]} — ${pin}`
+  if (meaningful.length === 1) return `${meaningful[0]} — ${pin}`
+  return loc
+}
 
 interface OfferModalProps {
   listing: Listing
@@ -158,6 +169,12 @@ export function OfferModal({ listing, buyerProfile, onClose }: OfferModalProps) 
                   <p className="text-sm text-gray-600">
                     Grade {listing.quality_grade} • {listing.quantity_kg} kg
                   </p>
+                  {listing.location && (
+                    <p className="text-xs text-gray-500 flex items-center gap-1 mt-0.5">
+                      <MapPin className="w-3 h-3 flex-shrink-0" />
+                      {formatLocationDisplay(listing.location)}
+                    </p>
+                  )}
                 </div>
               </div>
               <p className="text-sm text-gray-600">

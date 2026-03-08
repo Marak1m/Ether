@@ -15,6 +15,17 @@ interface ListingCardProps {
   listing: Listing & { distance?: number | null }
 }
 
+function formatLocationDisplay(loc: string | null | undefined): string {
+  if (!loc) return 'India'
+  const parts = loc.split(',').map(s => s.trim())
+  if (!/^\d{5,6}$/.test(parts[0])) return loc // already city-first
+  const pin = parts[0]
+  const meaningful = parts.slice(1).filter(p => !/district/i.test(p) && p.toLowerCase() !== 'india')
+  if (meaningful.length >= 2) return `${meaningful[0]}, ${meaningful[1]} — ${pin}`
+  if (meaningful.length === 1) return `${meaningful[0]} — ${pin}`
+  return loc
+}
+
 function formatCountdown(ms: number): string {
   if (ms <= 0) return '0:00'
   const totalSec = Math.floor(ms / 1000)
@@ -186,7 +197,7 @@ export function ListingCard({ listing }: ListingCardProps) {
               </div>
               <div className="flex items-center gap-1.5 col-span-2">
                 <MapPin className="w-3.5 h-3.5 text-gray-400" />
-                <span className="truncate">{listing.location}</span>
+                <span className="truncate">{formatLocationDisplay(listing.location)}</span>
               </div>
             </div>
 

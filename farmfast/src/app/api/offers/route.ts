@@ -86,11 +86,12 @@ export async function POST(req: NextRequest) {
 
       await sendWhatsAppMessage(listing.farmer_phone, whatsappMessage)
 
-      // Update chat session to reviewing_offers state
+      // Update chat session to reviewing_offers state and set current_listing_id
       await supabase
         .from('chat_sessions')
         .update({
           conversation_state: 'reviewing_offers',
+          current_listing_id: listing_id,
           last_message_at: new Date().toISOString()
         })
         .eq('farmer_phone', listing.farmer_phone)
